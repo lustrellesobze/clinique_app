@@ -1,0 +1,1 @@
+"""Gestionnaire WebSocket — à compléter."""

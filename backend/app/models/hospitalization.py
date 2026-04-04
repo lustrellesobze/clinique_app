@@ -1,0 +1,1 @@
+"""Hospitalization, Room — à compléter."""

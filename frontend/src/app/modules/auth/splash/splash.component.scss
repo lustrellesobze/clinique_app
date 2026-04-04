@@ -1,0 +1,133 @@
+.splash-screen {
+  background: var(--primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 20px;
+}
+
+// ─── STÉTHOSCOPE ─────────────────────────────────────────────────────
+.stethoscope-wrapper {
+  position: relative;
+  width: 160px;
+  height: 140px;
+  margin-bottom: 8px;
+}
+
+.stethoscope-left {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation: leftArc 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+.stethoscope-right {
+  position: absolute;
+  right: 0;
+  top: 0;
+  animation: rightArc 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+.chest-piece {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  animation: fadeUp 0.6s 1.1s both;
+  animation-name: fadeUp, pulse;
+  animation-duration: 0.6s, 2s;
+  animation-delay: 1.1s, 1.8s;
+  animation-fill-mode: both, none;
+  animation-iteration-count: 1, infinite;
+  animation-timing-function: ease, ease-in-out;
+}
+
+// ─── TEXTES ───────────────────────────────────────────────────────────
+.splash-title {
+  text-align: center;
+  animation: fadeUp 0.8s 1s both;
+
+  h1 {
+    color: var(--text-on-dark);
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    letter-spacing: 0.5px;
+  }
+
+  .tagline {
+    color: var(--secondary);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    margin: 0;
+  }
+}
+
+.splash-subtitle {
+  color: rgba(168, 200, 240, 0.8);
+  font-size: 14px;
+  text-align: center;
+  max-width: 260px;
+  line-height: 1.6;
+  margin: 0;
+  animation: fadeUp 0.8s 1.3s both;
+}
+
+// ─── BOUTON ───────────────────────────────────────────────────────────
+.btn-connect {
+  background: var(--secondary);
+  color: var(--text-on-dark);
+  border: none;
+  padding: 14px 52px;
+  border-radius: var(--radius-full);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: background 0.2s, transform 0.15s;
+  animation: fadeUp 0.8s 1.7s both;
+
+  &:hover {
+    background: var(--secondary-hover);
+    transform: scale(1.04);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+.version {
+  color: rgba(168, 200, 240, 0.4);
+  font-size: 11px;
+  animation: fadeUp 0.8s 2s both;
+}
+
+// ─── ANIMATIONS ───────────────────────────────────────────────────────
+@keyframes leftArc {
+  0%   { transform: translateX(-70px) rotate(-25deg); opacity: 0; }
+  70%  { transform: translateX(0) rotate(0deg);       opacity: 1; }
+  100% { transform: translateX(0) rotate(0deg);       opacity: 1; }
+}
+
+@keyframes rightArc {
+  0%   { transform: translateX(70px) rotate(25deg); opacity: 0; }
+  70%  { transform: translateX(0) rotate(0deg);     opacity: 1; }
+  100% { transform: translateX(0) rotate(0deg);     opacity: 1; }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50%       { transform: translateX(-50%) scale(1.12); }
+}

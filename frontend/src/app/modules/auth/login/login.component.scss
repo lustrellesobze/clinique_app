@@ -1,0 +1,168 @@
+.login-page {
+  min-height: 100vh;
+  background: var(--bg-app);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.5s ease;
+}
+
+.login-card {
+  background: var(--bg-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 400px;
+}
+
+// ─── LOGO ─────────────────────────────────────────────────────────────
+.login-logo {
+  text-align: center;
+  margin-bottom: 32px;
+
+  .logo-icon {
+    width: 56px;
+    height: 56px;
+    background: var(--primary);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 14px;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--primary);
+    margin: 0 0 4px;
+  }
+
+  p {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0;
+  }
+}
+
+// ─── FORMULAIRE ───────────────────────────────────────────────────────
+.form-group {
+  margin-bottom: 20px;
+
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 7px;
+  }
+
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--bg-white);
+    transition: border-color 0.2s;
+    outline: none;
+
+    &:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(0, 168, 120, 0.12);
+    }
+
+    &.input-error {
+      border-color: var(--status-error);
+    }
+
+    &::placeholder { color: var(--text-muted); }
+  }
+}
+
+.input-wrapper {
+  position: relative;
+
+  input { padding-right: 44px; }
+
+  .toggle-pw {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    color: var(--text-muted);
+    padding: 0;
+  }
+}
+
+.error-msg {
+  font-size: 12px;
+  color: var(--status-error);
+  margin-top: 4px;
+  display: block;
+}
+
+.alert-error {
+  background: var(--status-error-bg);
+  color: var(--status-error);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+  border-left: 3px solid var(--status-error);
+}
+
+// ─── BOUTON ───────────────────────────────────────────────────────────
+.btn-login {
+  width: 100%;
+  background: var(--primary);
+  color: var(--text-on-dark);
+  border: none;
+  padding: 13px;
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+  letter-spacing: 0.3px;
+
+  &:hover:not(:disabled) { background: var(--primary-hover); }
+  &:active:not(:disabled) { transform: scale(0.98); }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+// ─── FOOTER ───────────────────────────────────────────────────────────
+.login-footer {
+  text-align: center;
+  margin-top: 20px;
+
+  a {
+    color: var(--secondary);
+    font-size: 13px;
+    text-decoration: none;
+
+    &:hover { text-decoration: underline; }
+  }
+}
+
+.login-meta {
+  text-align: center;
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 0.5px solid var(--border-light);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

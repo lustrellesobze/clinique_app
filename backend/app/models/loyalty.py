@@ -1,0 +1,1 @@
+"""LoyaltyPoints — à compléter."""

@@ -1,0 +1,66 @@
+// ─── COULEURS PRINCIPALES
+:root {
+  // Primaire — Bleu Marine
+  --primary: #1e3a5f;
+  --primary-hover: #2a5080;
+  --primary-dark: #0d2440;
+  --primary-light: #e8f1fb;
+
+  // Secondaire — Vert Médical
+  --secondary: #00a878;
+  --secondary-hover: #00c48c;
+  --secondary-dark: #007a58;
+  --secondary-light: #e8f5ee;
+
+  // Accent — Orange
+  --accent: #e87722;
+  --accent-hover: #f08c3a;
+  --accent-dark: #c05a10;
+  --accent-light: #fff3e6;
+
+  // Fonds
+  --bg-app: #f8f9fc;
+  --bg-white: #ffffff;
+  --bg-sidebar: #eef1f8;
+  --bg-card: #ffffff;
+
+  // Textes
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a5568;
+  --text-muted: #a0aec0;
+  --text-on-dark: #ffffff;
+  --text-on-primary: #ffffff;
+
+  // Bordures
+  --border: #d0d8e8;
+  --border-light: #eef1f8;
+  --border-focus: #00a878;
+
+  // Statuts factures
+  --status-paid: #00a878;
+  --status-paid-bg: #e8f5ee;
+  --status-pending: #e87722;
+  --status-pending-bg: #fff3e6;
+  --status-error: #e53e3e;
+  --status-error-bg: #feeae8;
+  --status-info: #1e3a5f;
+  --status-info-bg: #e8f1fb;
+  --status-draft: #718096;
+  --status-draft-bg: #f7fafc;
+
+  // Typography
+  --font-main: "Inter", "Segoe UI", Arial, sans-serif;
+  --font-mono: "Courier New", monospace;
+
+  // Espacements
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  // Ombres légères
+  --shadow-sm: 0 1px 4px rgba(30, 58, 95, 0.08);
+  --shadow-md: 0 4px 16px rgba(30, 58, 95, 0.12);
+  --shadow-lg: 0 8px 32px rgba(30, 58, 95, 0.16);
+}
