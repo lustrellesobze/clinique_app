@@ -31,6 +31,7 @@ SEED_USERS: list[tuple[UserRole, str, str, str, str | None]] = [
     (UserRole.caissier_imagerie, "imagerie@demo.cm", "Bella", "Sarah", "Imagerie"),
     (UserRole.comptable, "comptable@demo.cm", "Tchouassi", "Henri", "Comptabilité"),
     (UserRole.resp_hospit, "hospit@demo.cm", "Mvondo", "Grace", "Hospitalisation"),
+    (UserRole.gestionnaire_assurance, "assurance@demo.cm", "Nkolo", "Patricia", "Assurances"),
     (UserRole.admin, "admin@demo.cm", "Admin", "Système", None),
 ]
 

@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -38,6 +38,9 @@ class Patient(Base):
     medecin_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    assurance_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("insurances.id", ondelete="SET NULL"), nullable=True
+    )
     assureur: Mapped[str | None] = mapped_column(String(150), nullable=True)
     numero_police_assurance: Mapped[str | None] = mapped_column(
         String(80), nullable=True
@@ -49,3 +52,6 @@ class Patient(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(), server_default=func.now(), onupdate=func.now()
     )
+    
+    # Relations
+    hospitalizations = relationship("Hospitalization", back_populates="patient")

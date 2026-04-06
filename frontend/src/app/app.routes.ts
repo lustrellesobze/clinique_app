@@ -37,6 +37,42 @@ export const routes: Routes = [
     canActivate: [AuthGuard],
     data: { roles: ['infirmiere_accueil', 'admin'] },
   },
+  {
+    path: 'laboratoire',
+    loadComponent: () =>
+      import('./modules/laboratoire/laboratoire.component').then(
+        (m) => m.LaboratoireComponent
+      ),
+    canActivate: [AuthGuard],
+    data: { roles: ['caissier_labo', 'admin'] },
+  },
+  {
+    path: 'imagerie',
+    loadComponent: () =>
+      import('./modules/imagerie/imagerie.component').then(
+        (m) => m.ImagerieComponent
+      ),
+    canActivate: [AuthGuard],
+    data: { roles: ['caissier_imagerie', 'admin'] },
+  },
+  {
+    path: 'hospitalisation',
+    loadComponent: () =>
+      import('./modules/hospitalisation/hospitalisation.component').then(
+        (m) => m.HospitalisationComponent
+      ),
+    canActivate: [AuthGuard],
+    data: { roles: ['resp_hospit', 'admin'] },
+  },
+  {
+    path: 'assurances',
+    loadComponent: () =>
+      import('./modules/assurances/assurances.component').then(
+        (m) => m.AssurancesComponent
+      ),
+    canActivate: [AuthGuard],
+    data: { roles: ['gestionnaire_assurance', 'comptable', 'admin'] },
+  },
 
   // Redirection
   { path: '**', redirectTo: '' },

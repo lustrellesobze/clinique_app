@@ -31,8 +31,7 @@ def upgrade() -> None:
         sa.Column(
             "motif_consultation",
             sa.Text(),
-            nullable=False,
-            server_default=sa.text("''"),
+            nullable=True,
         ),
         sa.Column(
             "type_consultation",

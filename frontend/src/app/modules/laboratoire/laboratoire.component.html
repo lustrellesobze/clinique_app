@@ -1,0 +1,153 @@
+<div class="laboratoire-container">
+  <header class="accueil-topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">✚</span>
+      <span class="brand-name">Clinique Espoir</span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-badge" *ngIf="auth.getCurrentUser() as u">
+        <span class="role-label">Laboratoire</span>
+        <span class="user-name">· {{ u.prenom }} {{ u.nom }}</span>
+      </div>
+      <nav class="top-nav">
+        <a routerLink="/dashboard">Tableau de bord</a>
+        <a href="/" (click)="onLogout($event)">Déconnexion</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <h1>Laboratoire - Ordonnances en attente</h1>
+
+  <div *ngIf="error" class="alert alert-danger">
+    {{ error }}
+  </div>
+
+  <div *ngIf="loading && !selectedPrescription" class="loading">
+    Chargement...
+  </div>
+
+  <!-- Liste des prescriptions -->
+  <div *ngIf="!selectedPrescription" class="prescriptions-list">
+    <div class="refresh-info">
+      <small>Rafraîchissement automatique toutes les 30 secondes</small>
+      <button (click)="loadPrescriptions()" class="btn btn-sm btn-secondary">
+        Actualiser maintenant
+      </button>
+    </div>
+
+    <div *ngIf="prescriptions.length === 0 && !loading" class="no-data">
+      Aucune ordonnance en attente
+    </div>
+
+    <table *ngIf="prescriptions.length > 0" class="table table-striped">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Patient</th>
+          <th>Médecin</th>
+          <th>Examens</th>
+          <th>Montant</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let prescription of prescriptions">
+          <td>{{ prescription.date_prescription | date:'short' }}</td>
+          <td>{{ prescription.patient_name }}</td>
+          <td>{{ prescription.medecin_name }}</td>
+          <td>
+            <ul class="list-unstyled mb-0">
+              <li *ngFor="let item of prescription.items">
+                {{ item.nom_examen }} ({{ item.quantite }})
+              </li>
+            </ul>
+          </td>
+          <td>{{ prescription.montant_total | number:'1.0-0' }} FCFA</td>
+          <td>
+            <button (click)="selectPrescription(prescription)" class="btn btn-primary btn-sm">
+              Facturer
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Formulaire de facturation -->
+  <div *ngIf="selectedPrescription" class="invoice-form">
+    <h2>Facturation - {{ selectedPrescription.patient_name }}</h2>
+
+    <div class="prescription-details">
+      <h3>Détails de l'ordonnance</h3>
+      <p><strong>Médecin:</strong> {{ selectedPrescription.medecin_name }}</p>
+      <p><strong>Date:</strong> {{ selectedPrescription.date_prescription | date:'short' }}</p>
+      
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Examen</th>
+            <th>Quantité</th>
+            <th>Prix unitaire</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of selectedPrescription.items">
+            <td>{{ item.nom_examen }}</td>
+            <td>{{ item.quantite }}</td>
+            <td>{{ item.prix_unitaire | number:'1.0-0' }} FCFA</td>
+            <td>{{ (item.prix_unitaire * item.quantite) | number:'1.0-0' }} FCFA</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3"><strong>Montant total</strong></td>
+            <td><strong>{{ selectedPrescription.montant_total | number:'1.0-0' }} FCFA</strong></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="payment-form">
+      <h3>Informations de paiement</h3>
+      
+      <div class="form-group">
+        <label>Mode de paiement</label>
+        <select [(ngModel)]="modePaiement" class="form-control">
+          <option value="especes">Espèces</option>
+          <option value="carte">Carte bancaire</option>
+          <option value="mobile_money">Mobile Money</option>
+          <option value="cheque">Chèque</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Remise fidélité (FCFA)</label>
+        <input type="number" [(ngModel)]="remiseFidelite" class="form-control" min="0" 
+               [max]="selectedPrescription.montant_total">
+      </div>
+
+      <div class="form-group">
+        <label>Part assurance (FCFA)</label>
+        <input type="number" [(ngModel)]="partAssurance" class="form-control" min="0" 
+               [max]="selectedPrescription.montant_total - remiseFidelite">
+      </div>
+
+      <div class="form-group">
+        <label>Part patient (FCFA)</label>
+        <input type="number" [value]="partPatient" class="form-control" readonly>
+      </div>
+
+      <div class="form-actions">
+        <button (click)="cancelSelection()" class="btn btn-secondary" [disabled]="loading">
+          Annuler
+        </button>
+        <button (click)="createInvoice()" class="btn btn-success" [disabled]="loading || partPatient < 0">
+          {{ loading ? 'Création...' : 'Créer la facture' }}
+        </button>
+      </div>
+    </div>
+  </div>
+  </main>
+</div>

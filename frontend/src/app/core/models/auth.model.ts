@@ -28,6 +28,7 @@ export type UserRole =
   | 'caissier_imagerie'
   | 'comptable'
   | 'resp_hospit'
+  | 'gestionnaire_assurance'
   | 'admin';
 
 // Mapping rôle → route de redirection après login
@@ -38,8 +39,9 @@ export const ROLE_ROUTES: Record<UserRole, string> = {
   caissier_pharmacie: '/pharmacie',
   caissier_labo: '/laboratoire',
   caissier_imagerie: '/imagerie',
-  comptable: '/dashboard',
+  comptable: '/assurances',
   resp_hospit: '/hospitalisation',
+  gestionnaire_assurance: '/assurances',
   admin: '/admin',
 };
 
@@ -53,5 +55,6 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   caissier_imagerie: 'Caissier(ère) Imagerie',
   comptable: 'Comptable',
   resp_hospit: 'Responsable Hospitalisation',
+  gestionnaire_assurance: 'Gestionnaire Assurances',
   admin: 'Administrateur',
 };

@@ -3,7 +3,7 @@ import uuid
 
 from sqlalchemy import Boolean, String
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -17,6 +17,7 @@ class UserRole(str, enum.Enum):
     caissier_imagerie = "caissier_imagerie"
     comptable = "comptable"
     resp_hospit = "resp_hospit"
+    gestionnaire_assurance = "gestionnaire_assurance"
     admin = "admin"
 
 
@@ -35,3 +36,6 @@ class User(Base):
     )
     service: Mapped[str | None] = mapped_column(String(100), nullable=True)
     est_actif: Mapped[bool] = mapped_column(Boolean, default=True)
+    
+    # Relations
+    notifications = relationship("Notification", back_populates="user")
