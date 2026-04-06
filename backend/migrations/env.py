@@ -10,7 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.config import settings
 from app.database import Base
 
-# Importer les modèles ici pour que Base.metadata soit complet lors des autogenerates
+from app.models import invoice  # noqa: F401
+from app.models import passage_accueil  # noqa: F401
+from app.models import patient  # noqa: F401
 from app.models import user  # noqa: F401
 
 config = context.config

@@ -1,9 +1,11 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
-from app.core.security import decode_token
+from app.core.db_errors import http_exception_from_db_error
+from app.core.security import decode_access_token
 from app.database import get_db
 from app.models.user import User
 
@@ -16,7 +18,7 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     try:
-        payload = decode_token(token)
+        payload = decode_access_token(token)
         user_id = payload.get("sub")
         if not user_id:
             raise ValueError()
@@ -27,8 +29,11 @@ def get_current_user(
             detail="Token invalide",
         )
 
-    stmt = select(User).where(User.id == user_id, User.est_actif.is_(True))
-    user = db.scalars(stmt).first()
+    try:
+        stmt = select(User).where(User.id == user_id, User.est_actif.is_(True))
+        user = db.scalars(stmt).first()
+    except (OperationalError, ProgrammingError) as e:
+        raise http_exception_from_db_error(e) from e
 
     if not user:
         raise HTTPException(

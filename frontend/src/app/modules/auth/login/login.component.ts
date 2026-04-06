@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '../../../core/auth/auth.service';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -12,6 +13,14 @@ import { AuthService } from '../../../core/auth/auth.service';
   styleUrls: ['./login.component.scss'],
 })
 export class LoginComponent implements OnInit {
+  /** Affiche l’aide comptes démo uniquement hors production */
+  readonly devDemoHint = !environment.production;
+
+  /** Textes avec « @ » : dans le HTML, « @ » déclenche la syntaxe Angular (@if, etc.) */
+  readonly demoEmailExamples =
+    'accueil@demo.cm · medecin@demo.cm · admin@demo.cm · …';
+  readonly demoPassword = 'demo123';
+
   loginForm!: FormGroup;
   isLoading = false;
   showPassword = false;

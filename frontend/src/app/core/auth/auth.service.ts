@@ -1,7 +1,21 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import {
+  HttpBackend,
+  HttpClient,
+  HttpErrorResponse,
+  HttpHeaders,
+  HttpParams,
+} from '@angular/common/http';
 import { Router } from '@angular/router';
-import { BehaviorSubject, Observable, tap, catchError, throwError } from 'rxjs';
+import {
+  BehaviorSubject,
+  Observable,
+  tap,
+  catchError,
+  throwError,
+  shareReplay,
+  finalize,
+} from 'rxjs';
 import {
   LoginRequest,
   LoginResponse,
@@ -15,7 +29,13 @@ export class AuthService {
   /** Base API (FastAPI : préfixe /api sur les routeurs) */
   private readonly API_URL = `${environment.apiUrl.replace(/\/+$/, '')}/api`;
   private readonly TOKEN_KEY = 'clinique_token';
+  private readonly REFRESH_KEY = 'clinique_refresh_token';
   private readonly USER_KEY = 'clinique_user';
+
+  /** HttpClient sans intercepteurs — évite boucle 401 sur /auth/refresh */
+  private readonly plainHttp: HttpClient;
+
+  private refreshInFlight: Observable<LoginResponse> | null = null;
 
   // Observable du user courant — tous les composants peuvent s'y abonner
   private currentUserSubject = new BehaviorSubject<UserInfo | null>(
@@ -25,38 +45,80 @@ export class AuthService {
 
   constructor(
     private http: HttpClient,
+    httpBackend: HttpBackend,
     private router: Router
-  ) {}
+  ) {
+    this.plainHttp = new HttpClient(httpBackend);
+  }
 
   // ─── LOGIN ────────────────────────────────────────────────────────────
   login(credentials: LoginRequest): Observable<LoginResponse> {
-    // FastAPI attend un form-data pour OAuth2PasswordRequestForm
-    const formData = new FormData();
-    formData.append('username', credentials.email);
-    formData.append('password', credentials.password);
-
-    return this.http.post<LoginResponse>(`${this.API_URL}/auth/login`, formData).pipe(
-      tap((response) => {
-        // Stocker le token et les infos user
-        localStorage.setItem(this.TOKEN_KEY, response.access_token);
-        localStorage.setItem(this.USER_KEY, JSON.stringify(response.user));
-        this.currentUserSubject.next(response.user);
-      }),
-      catchError((error) => {
-        const message =
-          error.status === 401
-            ? 'Email ou mot de passe incorrect.'
-            : error.status === 0
-              ? 'Impossible de contacter le serveur. Vérifiez votre connexion.'
-              : 'Une erreur est survenue. Veuillez réessayer.';
-        return throwError(() => new Error(message));
-      })
+    // OAuth2PasswordRequestForm : application/x-www-form-urlencoded, champs username + password
+    const body = new HttpParams()
+      .set('username', credentials.email.trim())
+      .set('password', credentials.password);
+    const headers = new HttpHeaders().set(
+      'Content-Type',
+      'application/x-www-form-urlencoded; charset=UTF-8'
     );
+
+    return this.http
+      .post<LoginResponse>(`${this.API_URL}/auth/login`, body, { headers })
+      .pipe(
+        tap((response) => {
+          localStorage.setItem(this.TOKEN_KEY, response.access_token);
+          localStorage.setItem(this.REFRESH_KEY, response.refresh_token);
+          localStorage.setItem(this.USER_KEY, JSON.stringify(response.user));
+          this.currentUserSubject.next(response.user);
+        }),
+        catchError((err: unknown) => {
+          const message =
+            err instanceof HttpErrorResponse
+              ? this.mapLoginError(err)
+              : 'Erreur inattendue. Réessayez.';
+          return throwError(() => new Error(message));
+        })
+      );
+  }
+
+  private mapLoginError(error: HttpErrorResponse): string {
+    const raw = error.error;
+    if (error.status === 401) {
+      return 'Email ou mot de passe incorrect.';
+    }
+    if (error.status === 503) {
+      const detail = this.fastApiDetailMessage(raw);
+      if (detail) {
+        return detail;
+      }
+      return (
+        'Service ou base de données indisponible. Ouvrez http://127.0.0.1:8000/health : ' +
+        'si « database » n’est pas « connected », démarrez WAMP / MySQL et vérifiez backend/.env.'
+      );
+    }
+    if (error.status === 0) {
+      return "Impossible de joindre l'API (port 8000). Démarrez le backend : dans le dossier backend, exécutez « uvicorn app.main:app --reload » puis réessayez.";
+    }
+    if (error.status === 502 || error.status === 504) {
+      return "L'API sur le port 8000 ne répond pas. Vérifiez qu'Uvicorn est bien démarré.";
+    }
+    const fromDetail = this.fastApiDetailMessage(raw);
+    if (fromDetail) {
+      return fromDetail;
+    }
+    if (error.status >= 500) {
+      return `Erreur serveur (${error.status}). Vérifiez la console Uvicorn et la connexion MySQL (fichier .env, base clinique_db).`;
+    }
+    if (typeof raw === 'string' && raw.length > 0 && raw.length < 400) {
+      return `Réponse serveur (${error.status}) : ${raw.trim().slice(0, 200)}`;
+    }
+    return `Erreur ${error.status}${error.statusText ? ' — ' + error.statusText : ''}. Réessayez ou ouvrez /docs sur l’API.`;
   }
 
   // ─── LOGOUT ───────────────────────────────────────────────────────────
   logout(): void {
     localStorage.removeItem(this.TOKEN_KEY);
+    localStorage.removeItem(this.REFRESH_KEY);
     localStorage.removeItem(this.USER_KEY);
     this.currentUserSubject.next(null);
     this.router.navigate(['/']);
@@ -65,6 +127,39 @@ export class AuthService {
   // ─── TOKEN ────────────────────────────────────────────────────────────
   getToken(): string | null {
     return localStorage.getItem(this.TOKEN_KEY);
+  }
+
+  getRefreshToken(): string | null {
+    return localStorage.getItem(this.REFRESH_KEY);
+  }
+
+  /**
+   * Renouvelle access + refresh (requête hors intercepteur JWT).
+   * Multiples appels concurrents partagent la même requête réseau.
+   */
+  refreshAccessToken(): Observable<LoginResponse> {
+    if (this.refreshInFlight) {
+      return this.refreshInFlight;
+    }
+    const rt = localStorage.getItem(this.REFRESH_KEY);
+    if (!rt) {
+      return throwError(() => new Error('Pas de refresh token'));
+    }
+    this.refreshInFlight = this.plainHttp
+      .post<LoginResponse>(`${this.API_URL}/auth/refresh`, { refresh_token: rt })
+      .pipe(
+        tap((response) => {
+          localStorage.setItem(this.TOKEN_KEY, response.access_token);
+          localStorage.setItem(this.REFRESH_KEY, response.refresh_token);
+          localStorage.setItem(this.USER_KEY, JSON.stringify(response.user));
+          this.currentUserSubject.next(response.user);
+        }),
+        shareReplay({ bufferSize: 1, refCount: false }),
+        finalize(() => {
+          this.refreshInFlight = null;
+        })
+      );
+    return this.refreshInFlight;
   }
 
   isLoggedIn(): boolean {
@@ -100,6 +195,25 @@ export class AuthService {
     }
     const route = ROLE_ROUTES[user.role] ?? '/dashboard';
     this.router.navigate([route]);
+  }
+
+  /** Corps d’erreur FastAPI `{ detail: string | … }`. */
+  private fastApiDetailMessage(raw: unknown): string | null {
+    if (!raw || typeof raw !== 'object' || !('detail' in raw)) {
+      return null;
+    }
+    const d = (raw as { detail: unknown }).detail;
+    if (typeof d === 'string') {
+      return d;
+    }
+    if (Array.isArray(d)) {
+      const parts = d
+        .map((x: { msg?: string }) => x?.msg)
+        .filter(Boolean)
+        .join(' ');
+      return parts || null;
+    }
+    return null;
   }
 
   // ─── PRIVATE ──────────────────────────────────────────────────────────

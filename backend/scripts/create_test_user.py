@@ -1,8 +1,9 @@
 """
-Crée un utilisateur de test (après `alembic upgrade head`) :
+Crée les comptes de démo (après `alembic upgrade head`) :
   python scripts/create_test_user.py
 
-Par défaut : admin@clinique.cm / admin123
+Même mot de passe pour tous les comptes (plateforme de test).
+Emails courts : un compte par rôle métier.
 """
 import sys
 import uuid
@@ -17,30 +18,57 @@ from app.core.security import hash_password
 from app.database import SessionLocal
 from app.models.user import User, UserRole
 
+# ─── Identifiants démo (à changer en production) ─────────────────────────
+SHARED_PASSWORD = "demo123"
+
+# (rôle, email, nom, prénom, service affiché)
+SEED_USERS: list[tuple[UserRole, str, str, str, str | None]] = [
+    (UserRole.infirmiere_accueil, "accueil@demo.cm", "Kamga", "Chantal", "Accueil"),
+    (UserRole.caissier_central, "caisse@demo.cm", "Nguema", "Eric", "Caisse centrale"),
+    (UserRole.medecin, "medecin@demo.cm", "Owona", "Dr. Jean", "Médecine"),
+    (UserRole.caissier_pharmacie, "pharmacie@demo.cm", "Mballa", "Lucie", "Pharmacie"),
+    (UserRole.caissier_labo, "labo@demo.cm", "Fotso", "Alain", "Laboratoire"),
+    (UserRole.caissier_imagerie, "imagerie@demo.cm", "Bella", "Sarah", "Imagerie"),
+    (UserRole.comptable, "comptable@demo.cm", "Tchouassi", "Henri", "Comptabilité"),
+    (UserRole.resp_hospit, "hospit@demo.cm", "Mvondo", "Grace", "Hospitalisation"),
+    (UserRole.admin, "admin@demo.cm", "Admin", "Système", None),
+]
+
 
 def main() -> None:
     db: Session = SessionLocal()
+    pwd_hash = hash_password(SHARED_PASSWORD)
+    created = 0
+    skipped = 0
     try:
-        email = "admin@clinique.cm"
-        existing = db.scalars(select(User).where(User.email == email)).first()
-        if existing:
-            print("Utilisateur déjà présent:", email)
-            return
-        u = User(
-            id=str(uuid.uuid4()),
-            nom="Admin",
-            prenom="Système",
-            email=email,
-            mot_de_passe_hash=hash_password("admin123"),
-            role=UserRole.admin,
-            service=None,
-            est_actif=True,
-        )
-        db.add(u)
+        for role, email, nom, prenom, service in SEED_USERS:
+            existing = db.scalars(select(User).where(User.email == email)).first()
+            if existing:
+                skipped += 1
+                continue
+            db.add(
+                User(
+                    id=str(uuid.uuid4()),
+                    nom=nom,
+                    prenom=prenom,
+                    email=email,
+                    mot_de_passe_hash=pwd_hash,
+                    role=role,
+                    service=service,
+                    est_actif=True,
+                )
+            )
+            created += 1
         db.commit()
-        print("Créé:", email, "/ admin123")
     finally:
         db.close()
+
+    print("Mot de passe commun (tous les comptes) :", SHARED_PASSWORD)
+    print("Comptes créés :", created, "| déjà présents (ignorés) :", skipped)
+    if created:
+        print("\nEmails à utiliser pour la connexion :")
+        for _, email, _, _, _ in SEED_USERS:
+            print(" ", email)
 
 
 if __name__ == "__main__":

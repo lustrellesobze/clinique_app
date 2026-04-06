@@ -19,7 +19,7 @@
       <div class="form-group">
         <label for="email">Email ou identifiant</label>
         <input id="email" type="email" formControlName="email"
-               placeholder="marie.ngono@clinique.cm"
+               placeholder="accueil@demo.cm"
                [class.input-error]="email?.invalid && email?.touched"/>
         <span class="error-msg"
               *ngIf="email?.invalid && email?.touched">
@@ -56,6 +56,14 @@
 
     <div class="login-footer">
       <a routerLink="/forgot-password">Mot de passe oublié ?</a>
+    </div>
+
+    <div class="login-dev-hint" *ngIf="devDemoHint">
+      <p>
+        Comptes démo : <code>{{ demoEmailExamples }}</code> — mot de passe commun :
+        <code>{{ demoPassword }}</code>
+      </p>
+      <p class="login-dev-hint__cmd">Backend : <code>python scripts/create_test_user.py</code></p>
     </div>
 
     <div class="login-meta">

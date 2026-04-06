@@ -35,6 +35,7 @@ export const routes: Routes = [
         (m) => m.AccueilComponent
       ),
     canActivate: [AuthGuard],
+    data: { roles: ['infirmiere_accueil', 'admin'] },
   },
 
   // Redirection

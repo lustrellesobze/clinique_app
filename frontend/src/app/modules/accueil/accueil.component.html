@@ -1,0 +1,207 @@
+<div class="accueil-page">
+  <header class="accueil-topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">✚</span>
+      <span class="brand-name">Clinique Espoir</span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-badge" *ngIf="auth.getCurrentUser() as u">
+        <span class="role-label">Infirmier(ère) d'accueil</span>
+        <span class="user-name">· {{ u.prenom }} {{ u.nom }}</span>
+      </div>
+      <nav class="top-nav">
+        <a routerLink="/dashboard">Tableau de bord</a>
+        <a href="/" (click)="onLogout($event)">Déconnexion</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="accueil-main">
+    <h1 class="page-title">Enregistrement nouveau patient</h1>
+
+    <div class="alert-success" *ngIf="success as s">
+      <p><strong>{{ s.message_transfert }}</strong></p>
+      <p>
+        Code patient : <code>{{ s.patient.code_patient }}</code> — Total à encaisser :
+        <strong>{{ s.passage.total_fcfa | number : '1.0-0' }} FCFA</strong>
+      </p>
+      <button type="button" class="btn-secondary" (click)="nouveauDossier()">
+        Nouvel enregistrement
+      </button>
+    </div>
+
+    <form [formGroup]="form" (ngSubmit)="onSubmit()" *ngIf="!success" class="accueil-form">
+      <section class="card">
+        <h2>Informations personnelles</h2>
+        <div class="grid-2">
+          <label>
+            <span>Nom <span class="req">*</span></span>
+            <input type="text" formControlName="nom" />
+          </label>
+          <label>
+            <span>Prénom <span class="req">*</span></span>
+            <input type="text" formControlName="prenom" />
+          </label>
+          <label>
+            <span>Date de naissance <span class="req">*</span></span>
+            <input type="date" formControlName="date_naissance" />
+          </label>
+          <fieldset class="fieldset-inline">
+            <legend>Sexe <span class="req">*</span></legend>
+            <label class="radio"
+              ><input type="radio" formControlName="sexe" value="M" /> Masculin</label
+            >
+            <label class="radio"
+              ><input type="radio" formControlName="sexe" value="F" /> Féminin</label
+            >
+            <label class="radio"
+              ><input type="radio" formControlName="sexe" value="autre" /> Autre</label
+            >
+          </fieldset>
+          <label>
+            <span>Téléphone <span class="req">*</span></span>
+            <input type="tel" formControlName="telephone" placeholder="+237 6XX XX XX XX" />
+          </label>
+          <label>
+            <span>Email</span>
+            <input type="email" formControlName="email" />
+          </label>
+          <label class="span-2">
+            <span>Contact d'urgence</span>
+            <input type="text" formControlName="contact_urgence" placeholder="+237 …" />
+          </label>
+        </div>
+      </section>
+
+      <section class="card" *ngIf="form.get('sexe')?.value === 'F'">
+        <h2>Gynécologie</h2>
+        <label>
+          <span>Dernière date de règles</span>
+          <input type="date" formControlName="derniere_date_regles" />
+        </label>
+      </section>
+
+      <section class="card">
+        <h2>Constantes (à l'arrivée)</h2>
+        <div class="grid-4">
+          <label>
+            <span>Poids (kg)</span>
+            <input type="number" step="0.1" formControlName="poids_kg" />
+          </label>
+          <label>
+            <span>Taille (cm)</span>
+            <input type="number" step="0.1" formControlName="taille_cm" />
+          </label>
+          <label>
+            <span>Température (°C)</span>
+            <input type="number" step="0.1" formControlName="temperature_c" />
+          </label>
+          <label>
+            <span>Tension</span>
+            <input type="text" formControlName="tension" placeholder="ex. 12/8" />
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Consultation</h2>
+        <div class="grid-2">
+          <label class="span-2">
+            <span>Motif de consultation</span>
+            <textarea rows="2" formControlName="motif_consultation"></textarea>
+          </label>
+          <label>
+            <span>Type de consultation <span class="req">*</span></span>
+            <select formControlName="type_consultation">
+              <option value="generale">Consultation générale</option>
+              <option value="rendez_vous">Rendez-vous</option>
+              <option value="specialiste">Spécialiste</option>
+              <option value="urgence">Urgence</option>
+            </select>
+          </label>
+          <label>
+            <span>Médecin attribué <span class="req">*</span></span>
+            <select formControlName="medecin_id">
+              <option value="">Sélectionner</option>
+              <option *ngFor="let m of medecins" [value]="m.id">
+                Dr {{ m.prenom }} {{ m.nom }}
+              </option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Assurance</h2>
+        <fieldset class="fieldset-inline">
+          <legend>Patient assuré ?</legend>
+          <label class="radio"
+            ><input type="radio" formControlName="est_assure" value="non" /> Non</label
+          >
+          <label class="radio"
+            ><input type="radio" formControlName="est_assure" value="oui" /> Oui</label
+          >
+        </fieldset>
+        <div class="grid-2" *ngIf="form.get('est_assure')?.value === 'oui'">
+          <label>
+            <span>Compagnie d'assurance</span>
+            <select formControlName="compagnie_assurance">
+              <option value="">Sélectionner</option>
+              <option *ngFor="let c of assureurs" [value]="c">{{ c }}</option>
+            </select>
+          </label>
+          <label>
+            <span>Date de validité</span>
+            <input type="date" formControlName="date_validite_assurance" />
+          </label>
+          <label class="span-2">
+            <span>Numéro d'assuré</span>
+            <input type="text" formControlName="numero_assure" />
+          </label>
+        </div>
+      </section>
+
+      <section class="card billing">
+        <h2>Facturation consultation</h2>
+        <p class="billing-hint">
+          Montants indicatifs — la caisse finalisera la facture et le mode de paiement.
+        </p>
+        <div class="totals">
+          <div class="row">
+            <span>Montant</span>
+            <span>{{ form.get('montant_consultation_fcfa')?.value | number : '1.0-0' }} FCFA</span>
+          </div>
+          <div class="row">
+            <span>Remise</span>
+            <span>{{ form.get('remise_fcfa')?.value | number : '1.0-0' }} FCFA</span>
+          </div>
+          <div class="row total">
+            <span>TOTAL</span>
+            <span>{{ totalFcfa | number : '1.0-0' }} FCFA</span>
+          </div>
+        </div>
+        <div class="grid-2 mini-grid">
+          <label>
+            <span>Montant (FCFA)</span>
+            <input type="number" formControlName="montant_consultation_fcfa" min="0" />
+          </label>
+          <label>
+            <span>Remise (FCFA)</span>
+            <input type="number" formControlName="remise_fcfa" min="0" />
+          </label>
+        </div>
+      </section>
+
+      <div class="alert-error" *ngIf="errorMsg">{{ errorMsg }}</div>
+
+      <footer class="form-actions">
+        <button type="button" class="btn-secondary" (click)="resetForm()" [disabled]="submitting">
+          Annuler
+        </button>
+        <button type="submit" class="btn-primary" [disabled]="form.invalid || submitting">
+          {{ submitting ? 'Enregistrement…' : 'Enregistrer et facturer' }}
+        </button>
+      </footer>
+    </form>
+  </main>
+</div>

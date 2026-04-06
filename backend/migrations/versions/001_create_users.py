@@ -34,6 +34,9 @@ def upgrade() -> None:
             server_default=sa.true(),
         ),
         sa.PrimaryKeyConstraint("id"),
+        mysql_engine="InnoDB",
+        mysql_charset="utf8mb4",
+        mysql_collate="utf8mb4_unicode_ci",
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
 

@@ -153,6 +153,36 @@
   }
 }
 
+.login-dev-hint {
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-app, #f4f6f8);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+
+  p {
+    margin: 0 0 8px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  code {
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .login-dev-hint__cmd {
+    font-size: 11px;
+    opacity: 0.9;
+  }
+}
+
 .login-meta {
   text-align: center;
   margin-top: 28px;
