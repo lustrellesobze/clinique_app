@@ -35,7 +35,7 @@ export type UserRole =
 export const ROLE_ROUTES: Record<UserRole, string> = {
   infirmiere_accueil: '/accueil',
   caissier_central: '/caisse',
-  medecin: '/medecin/dashboard',
+  medecin: '/medecin',
   caissier_pharmacie: '/pharmacie',
   caissier_labo: '/laboratoire',
   caissier_imagerie: '/imagerie',

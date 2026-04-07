@@ -45,6 +45,29 @@ export const routes: Routes = [
     data: { roles: ['caissier_central', 'admin'] },
   },
   {
+    path: 'medecin',
+    loadComponent: () =>
+      import('./modules/medecin/medecin.component').then((m) => m.MedecinComponent),
+    canActivate: [AuthGuard],
+    data: { roles: ['medecin', 'admin'] },
+  },
+  {
+    path: 'medecin/dashboard',
+    loadComponent: () =>
+      import('./modules/medecin/medecin.component').then((m) => m.MedecinComponent),
+    canActivate: [AuthGuard],
+    data: { roles: ['medecin', 'admin'] },
+  },
+  {
+    path: 'pharmacie',
+    loadComponent: () =>
+      import('./modules/pharmacie/pharmacie.component').then(
+        (m) => m.PharmacieComponent
+      ),
+    canActivate: [AuthGuard],
+    data: { roles: ['caissier_pharmacie', 'admin'] },
+  },
+  {
     path: 'laboratoire',
     loadComponent: () =>
       import('./modules/laboratoire/laboratoire.component').then(

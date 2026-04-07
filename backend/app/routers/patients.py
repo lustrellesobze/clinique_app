@@ -6,9 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.db_errors import http_exception_from_db_error
 from app.core.dependencies import require_role
 from app.database import get_db
+from app.models.passage_accueil import PassageAccueil
 from app.models.patient import Patient
+from app.models.prescription import Prescription
 from app.models.user import User, UserRole
 from app.schemas.caisse import AssignDoctorIn, PatientCaisseOut
+from app.schemas.medecin import ConsultationOut, PatientRecordOut, PrescriptionOut
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -18,6 +21,10 @@ _role_caisse_or_admin = require_role(
 )
 _role_accueil_or_admin = require_role(
     UserRole.infirmiere_accueil.value,
+    UserRole.admin.value,
+)
+_role_medecin_or_admin = require_role(
+    UserRole.medecin.value,
     UserRole.admin.value,
 )
 
@@ -104,4 +111,86 @@ def assign_doctor(
         raise
     except (OperationalError, ProgrammingError) as e:
         db.rollback()
+        raise http_exception_from_db_error(e) from e
+
+
+@router.get("/{patient_id}/record", response_model=PatientRecordOut)
+def patient_record(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    current: User = Depends(_role_medecin_or_admin),
+):
+    try:
+        patient = db.scalars(select(Patient).where(Patient.id == patient_id)).first()
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Patient introuvable",
+            )
+        if current.role.value != UserRole.admin.value and patient.medecin_id != current.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Accès dossier non autorisé pour ce médecin",
+            )
+
+        passages = db.scalars(
+            select(PassageAccueil)
+            .where(PassageAccueil.patient_id == patient.id)
+            .order_by(PassageAccueil.created_at.desc())
+            .limit(20)
+        ).all()
+        prescriptions = db.scalars(
+            select(Prescription)
+            .where(Prescription.patient_id == patient.id)
+            .order_by(Prescription.created_at.desc())
+            .limit(20)
+        ).all()
+
+        return PatientRecordOut(
+            patient_id=patient.id,
+            code_patient=patient.code_patient,
+            nom=patient.nom,
+            prenom=patient.prenom,
+            telephone=patient.telephone,
+            assureur=patient.assureur,
+            passages=[
+                ConsultationOut(
+                    passage_id=p.id,
+                    patient_id=p.patient_id,
+                    statut=p.statut.value,
+                    motif_consultation=p.motif_consultation or "",
+                    poids_kg=p.poids_kg,
+                    taille_cm=p.taille_cm,
+                    temperature_c=p.temperature_c,
+                    tension=p.tension,
+                )
+                for p in passages
+            ],
+            prescriptions=[
+                PrescriptionOut(
+                    id=pr.id,
+                    patient_id=pr.patient_id,
+                    medecin_id=pr.medecin_id,
+                    passage_accueil_id=pr.passage_accueil_id,
+                    type_prescription=pr.type_prescription,
+                    statut=pr.statut,
+                    notes=pr.notes,
+                    created_at=pr.created_at,
+                    items=[
+                        {
+                            "id": it.id,
+                            "nom_item": it.nom_item,
+                            "description": it.description,
+                            "quantite": it.quantite,
+                            "prix_unitaire": it.prix_unitaire,
+                        }
+                        for it in pr.items
+                    ],
+                )
+                for pr in prescriptions
+            ],
+        )
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as e:
         raise http_exception_from_db_error(e) from e

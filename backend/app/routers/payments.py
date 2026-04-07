@@ -12,6 +12,7 @@ import qrcode
 
 from app.core.db_errors import http_exception_from_db_error
 from app.core.dependencies import require_role
+from app.core.realtime import caisse_realtime_manager
 from app.database import get_db
 from app.models.invoice import Facture, FactureStatut
 from app.models.payment import ModePaiement, Paiement, StatutPaiement
@@ -231,6 +232,25 @@ def confirm_mobile_payment_mock(
             db.commit()
             db.refresh(payment)
             db.refresh(facture)
+            import asyncio
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(
+                    caisse_realtime_manager.broadcast(
+                        {
+                            "event": "mobile_payment_updated",
+                            "payment_id": payment.id,
+                            "reference_transaction": payment.reference_transaction,
+                            "payment_status": payment.statut.value,
+                            "invoice_id": facture.id,
+                            "invoice_status": facture.statut.value,
+                            "invoice_paid": float(facture.montant_regle or 0),
+                        }
+                    )
+                )
+            except RuntimeError:
+                pass
 
         return _build_payment_status(payment, facture)
     except HTTPException:
