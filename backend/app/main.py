@@ -15,6 +15,7 @@ from app.routers import (
     insurance,
     invoices,
     laboratory,
+    notifications,
     patients,
     payments,
     pharmacy,
@@ -54,6 +55,7 @@ app.include_router(laboratory.router, prefix="/api")
 app.include_router(imaging.router, prefix="/api")
 app.include_router(hospitalization.router, prefix="/api")
 app.include_router(insurance.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
