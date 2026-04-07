@@ -37,6 +37,13 @@ export const routes: Routes = [
     canActivate: [AuthGuard],
     data: { roles: ['infirmiere_accueil', 'admin'] },
   },
+  {
+    path: 'caisse',
+    loadComponent: () =>
+      import('./modules/caisse/caisse.component').then((m) => m.CaisseComponent),
+    canActivate: [AuthGuard],
+    data: { roles: ['caissier_central', 'admin'] },
+  },
 
   // Redirection
   { path: '**', redirectTo: '' },
