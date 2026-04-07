@@ -1,173 +1,258 @@
-"""
-Routes API pour la gestion des paiements et Mobile Money
-"""
-from fastapi import APIRouter, Depends, HTTPException, status
+import base64
+import io
+import secrets
+from datetime import datetime
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import Optional
+import qrcode
 
-from app.core.dependencies import get_db, get_current_user
-from app.models.user import User
-from app.services.mobile_money import MobileMoneyService, MobileMoneyProvider
-
+from app.core.db_errors import http_exception_from_db_error
+from app.core.dependencies import require_role
+from app.database import get_db
+from app.models.invoice import Facture, FactureStatut
+from app.models.payment import ModePaiement, Paiement, StatutPaiement
+from app.models.user import User, UserRole
+from app.schemas.caisse import (
+    MobilePaymentInitIn,
+    MobilePaymentInitOut,
+    PaymentCreateIn,
+    PaymentOut,
+    PaymentStatusOut,
+)
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
-
-# Schémas Pydantic
-class MobileMoneyPaymentRequest(BaseModel):
-    facture_id: str
-    montant: float
-    telephone: str
-    provider: str  # "mtn_momo" ou "orange_money"
+_role_caisse_or_admin = require_role(
+    UserRole.caissier_central.value,
+    UserRole.admin.value,
+)
 
 
-class MobileMoneyPaymentResponse(BaseModel):
-    transaction_id: str
-    status: str
-    message: str
-    montant: float
-    telephone: str
+def _to_decimal(v: object, default: str = "0") -> Decimal:
+    if isinstance(v, Decimal):
+        return v
+    if v is None:
+        return Decimal(default)
+    return Decimal(str(v))
 
 
-class MobileMoneyCallbackRequest(BaseModel):
-    transaction_id: str
-    success: bool
-    error_message: Optional[str] = None
+def _build_payment_status(payment: Paiement, facture: Facture) -> PaymentStatusOut:
+    total = _to_decimal(facture.montant_total)
+    regle = _to_decimal(facture.montant_regle)
+    return PaymentStatusOut(
+        payment_id=payment.id,
+        statut=payment.statut.value,
+        facture_statut=facture.statut.value,
+        montant_regle=regle,
+        restant_a_payer=max(Decimal("0"), total - regle),
+    )
 
 
-class TransactionStatusResponse(BaseModel):
-    transaction_id: str
-    status: str
-    facture_id: str
-    montant: float
-    provider: str
-    created_at: str
-    updated_at: str
-
-
-@router.post("/mobile-money/initiate", response_model=MobileMoneyPaymentResponse)
-def initiate_mobile_money_payment(
-    payment_request: MobileMoneyPaymentRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+@router.post("", response_model=PaymentOut, status_code=status.HTTP_201_CREATED)
+def create_payment(
+    body: PaymentCreateIn,
+    db: Session = Depends(get_db),
+    current: User = Depends(_role_caisse_or_admin),
 ):
-    """
-    Initie un paiement Mobile Money (MTN MoMo ou Orange Money)
-    """
-    # Vérifier que l'utilisateur est caissier
-    if current_user.role not in ["caissier_central", "caissier_labo", "caissier_imagerie", "caissier_pharmacie", "admin"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Seuls les caissiers peuvent initier des paiements"
-        )
-    
-    # Vérifier le fournisseur
-    if payment_request.provider not in [MobileMoneyProvider.MTN_MOMO, MobileMoneyProvider.ORANGE_MONEY]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Fournisseur invalide. Utilisez 'mtn_momo' ou 'orange_money'"
-        )
-    
     try:
-        result = MobileMoneyService.initiate_payment(
-            db=db,
-            facture_id=payment_request.facture_id,
-            montant=payment_request.montant,
-            telephone=payment_request.telephone,
-            provider=payment_request.provider,
-            caissier_id=current_user.id
+        facture = db.scalars(select(Facture).where(Facture.id == body.facture_id)).first()
+        if not facture:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Facture introuvable",
+            )
+
+        total = _to_decimal(facture.montant_total)
+        regle = _to_decimal(facture.montant_regle)
+        montant = _to_decimal(body.montant)
+        restant = max(Decimal("0"), total - regle)
+        if montant > restant:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Montant trop élevé. Reste à payer: {restant} FCFA",
+            )
+
+        payment = Paiement(
+            facture_id=facture.id,
+            caissier_id=current.id,
+            montant=float(montant),
+            mode_paiement=ModePaiement(body.mode_paiement),
+            statut=StatutPaiement.confirme,
+            reference_transaction=body.reference_transaction,
+            commentaire=body.commentaire,
         )
-        
-        return MobileMoneyPaymentResponse(**result)
-    
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors de l'initiation du paiement: {str(e)}"
-        )
+        db.add(payment)
+
+        new_regle = regle + montant
+        facture.montant_regle = float(new_regle)
+        if new_regle >= total:
+            facture.statut = FactureStatut.payee
+        elif new_regle > 0:
+            facture.statut = FactureStatut.partielle
+        else:
+            facture.statut = FactureStatut.en_attente
+
+        db.commit()
+        db.refresh(payment)
+        return payment
+    except HTTPException:
+        db.rollback()
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        db.rollback()
+        raise http_exception_from_db_error(e) from e
 
 
-@router.get("/mobile-money/status/{transaction_id}", response_model=TransactionStatusResponse)
-def get_transaction_status(
-    transaction_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+@router.post(
+    "/mobile/initiate",
+    response_model=MobilePaymentInitOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def initiate_mobile_payment(
+    body: MobilePaymentInitIn,
+    db: Session = Depends(get_db),
+    current: User = Depends(_role_caisse_or_admin),
 ):
-    """
-    Récupère le statut d'une transaction Mobile Money
-    """
-    transaction = MobileMoneyService.get_transaction_status(transaction_id)
-    
-    if not transaction:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transaction non trouvée"
-        )
-    
-    return TransactionStatusResponse(**transaction)
+    """Mode mock pour soutenance: génère QR et statut en_attente.
 
-
-@router.post("/mobile-money/callback/mtn")
-def mtn_momo_callback(
-    callback_data: MobileMoneyCallbackRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    Endpoint de callback pour MTN MoMo
-    (En production, cet endpoint serait appelé par l'API MTN)
+    TODO: brancher l'API opérateur (Orange/MTN) ici.
     """
     try:
-        result = MobileMoneyService.simulate_mtn_callback(
-            db=db,
-            transaction_id=callback_data.transaction_id,
-            success=callback_data.success
+        facture = db.scalars(select(Facture).where(Facture.id == body.facture_id)).first()
+        if not facture:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Facture introuvable",
+            )
+        total = _to_decimal(facture.montant_total)
+        regle = _to_decimal(facture.montant_regle)
+        montant = _to_decimal(body.montant)
+        restant = max(Decimal("0"), total - regle)
+        if montant > restant:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Montant trop élevé. Reste à payer: {restant} FCFA",
+            )
+
+        ref = body.reference_transaction or (
+            f"{'OM' if body.provider == 'orange_money' else 'MM'}"
+            f"-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.randbelow(1000):03d}"
         )
-        
-        return result
-    
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
+        payment = Paiement(
+            facture_id=facture.id,
+            caissier_id=current.id,
+            montant=float(montant),
+            mode_paiement=ModePaiement(body.provider),
+            statut=StatutPaiement.en_attente,
+            reference_transaction=ref,
+            commentaire="Paiement mobile initié (mock avant API opérateur).",
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors du traitement du callback: {str(e)}"
+        db.add(payment)
+        db.commit()
+        db.refresh(payment)
+
+        payload = (
+            f"CLINIQUE|facture={facture.numero_facture}|montant={montant}|"
+            f"provider={body.provider}|ref={ref}"
         )
+        img = qrcode.make(payload)
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        qr_b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+        return MobilePaymentInitOut(
+            payment=payment,
+            qr_png_base64=qr_b64,
+            qr_payload=payload,
+            instructions=[
+                "Ouvrez votre application Mobile Money.",
+                "Scannez le QR code puis validez sur votre téléphone.",
+                "Utilisez ensuite le bouton de confirmation dans la caisse.",
+            ],
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        db.rollback()
+        raise http_exception_from_db_error(e) from e
 
 
-@router.post("/mobile-money/callback/orange")
-def orange_money_callback(
-    callback_data: MobileMoneyCallbackRequest,
-    db: Session = Depends(get_db)
+@router.get("/mobile/{payment_id}/status", response_model=PaymentStatusOut)
+def mobile_payment_status(
+    payment_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(_role_caisse_or_admin),
 ):
-    """
-    Endpoint de callback pour Orange Money
-    (En production, cet endpoint serait appelé par l'API Orange Money)
-    """
     try:
-        result = MobileMoneyService.simulate_orange_callback(
-            db=db,
-            transaction_id=callback_data.transaction_id,
-            success=callback_data.success
-        )
-        
-        return result
-    
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur lors du traitement du callback: {str(e)}"
-        )
+        payment = db.scalars(select(Paiement).where(Paiement.id == payment_id)).first()
+        if not payment:
+            raise HTTPException(status_code=404, detail="Paiement introuvable")
+        facture = db.scalars(select(Facture).where(Facture.id == payment.facture_id)).first()
+        if not facture:
+            raise HTTPException(status_code=404, detail="Facture introuvable")
+        return _build_payment_status(payment, facture)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        raise http_exception_from_db_error(e) from e
+
+
+@router.post("/mobile/{payment_id}/confirm", response_model=PaymentStatusOut)
+def confirm_mobile_payment_mock(
+    payment_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(_role_caisse_or_admin),
+):
+    """Confirmation mock manuelle (en attendant webhook opérateur)."""
+    try:
+        payment = db.scalars(select(Paiement).where(Paiement.id == payment_id)).first()
+        if not payment:
+            raise HTTPException(status_code=404, detail="Paiement introuvable")
+        facture = db.scalars(select(Facture).where(Facture.id == payment.facture_id)).first()
+        if not facture:
+            raise HTTPException(status_code=404, detail="Facture introuvable")
+
+        if payment.statut == StatutPaiement.en_attente:
+            payment.statut = StatutPaiement.confirme
+            total = _to_decimal(facture.montant_total)
+            regle = _to_decimal(facture.montant_regle) + _to_decimal(payment.montant)
+            facture.montant_regle = float(regle)
+            if regle >= total:
+                facture.statut = FactureStatut.payee
+            elif regle > 0:
+                facture.statut = FactureStatut.partielle
+            else:
+                facture.statut = FactureStatut.en_attente
+            db.commit()
+            db.refresh(payment)
+            db.refresh(facture)
+
+        return _build_payment_status(payment, facture)
+    except HTTPException:
+        db.rollback()
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        db.rollback()
+        raise http_exception_from_db_error(e) from e
+
+
+@router.get("", response_model=list[PaymentOut])
+def list_payments(
+    facture_id: str = Query(min_length=1),
+    db: Session = Depends(get_db),
+    _: User = Depends(_role_caisse_or_admin),
+):
+    try:
+        rows = db.scalars(
+            select(Paiement)
+            .where(Paiement.facture_id == facture_id)
+            .order_by(Paiement.created_at.desc())
+        ).all()
+        return rows
+    except (OperationalError, ProgrammingError) as e:
+        raise http_exception_from_db_error(e) from e

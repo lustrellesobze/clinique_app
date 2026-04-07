@@ -12,6 +12,7 @@ from app.database import Base
 
 from app.models import invoice  # noqa: F401
 from app.models import passage_accueil  # noqa: F401
+from app.models import payment  # noqa: F401
 from app.models import patient  # noqa: F401
 from app.models import user  # noqa: F401
 

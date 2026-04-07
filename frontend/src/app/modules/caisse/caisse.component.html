@@ -1,0 +1,225 @@
+<div class="caisse-page">
+  <header class="caisse-topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">✚</span>
+      <span class="brand-name">Clinique Espoir — Caisse</span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-badge" *ngIf="auth.getCurrentUser() as u">
+        <span class="role-label">Caissier(ère) central(e)</span>
+        <span class="user-name">· {{ u.prenom }} {{ u.nom }}</span>
+      </div>
+      <nav class="top-nav">
+        <a routerLink="/dashboard">Tableau de bord</a>
+        <a href="/" (click)="onLogout($event)">Déconnexion</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="caisse-main">
+    <h1 class="page-title">Facturation consultation</h1>
+
+    <section class="card">
+      <h2>Recherche patient</h2>
+      <form class="search-row" [formGroup]="searchForm" (ngSubmit)="onSearchPatient()">
+        <input
+          type="text"
+          formControlName="q"
+          placeholder="Code patient, nom, prénom ou téléphone"
+        />
+        <button class="btn-primary" type="submit" [disabled]="loadingSearch">
+          {{ loadingSearch ? 'Recherche…' : 'Rechercher' }}
+        </button>
+      </form>
+      <div class="alert-error" *ngIf="searchingError">{{ searchingError }}</div>
+
+      <div class="patients-list" *ngIf="patients.length > 0">
+        <button
+          type="button"
+          class="patient-item"
+          *ngFor="let p of patients"
+          (click)="choisirPatient(p)"
+          [class.active]="patientSelected?.id === p.id"
+        >
+          <strong>{{ p.code_patient }}</strong>
+          <span>{{ p.nom }} {{ p.prenom }}</span>
+          <small>{{ p.telephone || 'téléphone non renseigné' }}</small>
+        </button>
+      </div>
+    </section>
+
+    <section class="card" *ngIf="patientSelected as p">
+      <h2>Patient sélectionné</h2>
+      <p><strong>{{ p.code_patient }}</strong> — {{ p.nom }} {{ p.prenom }}</p>
+      <p class="muted">Assureur: {{ p.assureur || 'Non assuré' }}</p>
+    </section>
+
+    <section class="card" *ngIf="patientSelected">
+      <h2>Créer facture consultation</h2>
+      <form [formGroup]="invoiceForm" (ngSubmit)="creerFacture()">
+        <div class="grid-2">
+          <label>
+            <span>Désignation</span>
+            <input type="text" formControlName="designation" />
+          </label>
+          <label>
+            <span>Quantité</span>
+            <input type="number" min="1" formControlName="quantite" />
+          </label>
+          <label>
+            <span>Prix unitaire (FCFA)</span>
+            <input type="number" min="0" formControlName="prix_unitaire" />
+          </label>
+          <label>
+            <span>Remise ligne (FCFA)</span>
+            <input type="number" min="0" formControlName="remise_montant" />
+          </label>
+          <label class="span-2">
+            <span>Commentaire</span>
+            <input type="text" formControlName="commentaire" />
+          </label>
+        </div>
+        <div class="total-box">
+          Total saisi: <strong>{{ totalSaisie | number : '1.0-0' }} FCFA</strong>
+        </div>
+        <button class="btn-primary" type="submit" [disabled]="creatingInvoice">
+          {{ creatingInvoice ? 'Création…' : 'Créer facture' }}
+        </button>
+      </form>
+    </section>
+
+    <section class="card" *ngIf="patientSelected">
+      <h2>Factures du patient</h2>
+      <div class="invoices-list" *ngIf="factures.length > 0; else noInvoice">
+        <button
+          type="button"
+          class="invoice-item"
+          *ngFor="let f of factures"
+          (click)="selectionnerFacture(f.id)"
+          [class.active]="factureSelected?.id === f.id"
+        >
+          <strong>{{ f.numero_facture }}</strong>
+          <span>{{ f.statut }}</span>
+          <span>Total: {{ f.montant_total | number : '1.0-0' }} FCFA</span>
+          <span>Reste: {{ f.restant_a_payer | number : '1.0-0' }} FCFA</span>
+          <span
+            class="btn-link"
+            role="button"
+            tabindex="0"
+            (click)="ouvrirPdfFacture(f.id); $event.stopPropagation()"
+          >
+            Télécharger PDF
+          </span>
+        </button>
+      </div>
+      <ng-template #noInvoice>
+        <p class="muted">Aucune facture disponible.</p>
+      </ng-template>
+    </section>
+
+    <section class="card" *ngIf="factureSelected as f">
+      <h2>Encaissement</h2>
+      <p class="muted">
+        Facture {{ f.numero_facture }} — Reste à payer:
+        <strong>{{ f.restant_a_payer | number : '1.0-0' }} FCFA</strong>
+      </p>
+      <div class="totaux-facture">
+        <div><span>Sous-total:</span><strong>{{ (f.montant_total + (f.remise_globale || 0)) | number : '1.0-0' }} FCFA</strong></div>
+        <div><span>Remise caisse:</span><strong>{{ (f.remise_globale || 0) | number : '1.0-0' }} FCFA</strong></div>
+        <div><span>Total facture:</span><strong>{{ f.montant_total | number : '1.0-0' }} FCFA</strong></div>
+        <div><span>Déjà payé:</span><strong>{{ f.montant_regle | number : '1.0-0' }} FCFA</strong></div>
+      </div>
+      <form [formGroup]="paymentForm" (ngSubmit)="encaisser()">
+        <div class="grid-3">
+          <label>
+            <span>Montant</span>
+            <input type="number" min="1" formControlName="montant" />
+          </label>
+          <label *ngIf="paymentForm.get('mode_paiement')?.value === 'especes'">
+            <span>Montant reçu</span>
+            <input type="number" min="0" formControlName="montant_recu" />
+          </label>
+          <label>
+            <span>Mode de paiement</span>
+            <select formControlName="mode_paiement">
+              <option value="especes">Espèces</option>
+              <option value="mtn_momo">MTN MoMo</option>
+              <option value="orange_money">Orange Money</option>
+              <option value="carte">Carte (indisponible)</option>
+              <option value="mixte">Mixte (espèces + mobile)</option>
+              <option value="assurance">Assurance</option>
+            </select>
+          </label>
+          <label>
+            <span>Référence (si non espèces)</span>
+            <input type="text" formControlName="reference_transaction" />
+          </label>
+        </div>
+        <div class="render-box" *ngIf="paymentForm.get('mode_paiement')?.value === 'especes'">
+          Monnaie à rendre: <strong>{{ monnaieARendre | number : '1.0-0' }} FCFA</strong>
+        </div>
+        <div class="grid-4 mixte-box" *ngIf="paymentForm.get('mode_paiement')?.value === 'mixte'">
+          <label>
+            <span>Part espèces</span>
+            <input type="number" min="0" formControlName="montant_especes" />
+          </label>
+          <label>
+            <span>Part mobile</span>
+            <input type="number" min="0" formControlName="montant_mobile" />
+          </label>
+          <label>
+            <span>Canal mobile</span>
+            <select formControlName="mode_mobile">
+              <option value="orange_money">Orange Money</option>
+              <option value="mtn_momo">MTN MoMo</option>
+            </select>
+          </label>
+          <label>
+            <span>Référence mobile</span>
+            <input type="text" formControlName="reference_mobile" />
+          </label>
+        </div>
+        <button class="btn-primary" type="submit" [disabled]="paying">
+          {{ paying ? 'Enregistrement…' : 'Valider paiement' }}
+        </button>
+      </form>
+
+      <div class="mobile-box" *ngIf="mobileInit as m">
+        <h3>Paiement Mobile Money</h3>
+        <p class="muted">Scannez le QR code puis confirmez le paiement.</p>
+        <img
+          class="qr-img"
+          [src]="'data:image/png;base64,' + m.qr_png_base64"
+          alt="QR code paiement mobile"
+        />
+        <ul>
+          <li *ngFor="let ins of m.instructions">{{ ins }}</li>
+        </ul>
+        <div class="mobile-actions">
+          <button class="btn-secondary" type="button" (click)="verifierStatutMobile()">
+            Vérifier statut
+          </button>
+          <button class="btn-primary" type="button" (click)="confirmerMobileMock()">
+            Confirmer (mock)
+          </button>
+        </div>
+        <p class="muted" *ngIf="mobileStatus">
+          Statut paiement: <strong>{{ mobileStatus.statut }}</strong> — reste:
+          <strong>{{ mobileStatus.restant_a_payer | number : '1.0-0' }} FCFA</strong>
+        </p>
+      </div>
+
+      <div class="paiements-log" *ngIf="paiementsFacture.length > 0">
+        <h3>Historique des paiements</h3>
+        <div class="paiement-item" *ngFor="let p of paiementsFacture">
+          <span>{{ p.mode_paiement }}</span>
+          <strong>{{ p.montant | number : '1.0-0' }} FCFA</strong>
+          <small>{{ p.reference_transaction || 'sans référence' }}</small>
+        </div>
+      </div>
+    </section>
+
+    <div class="alert-success" *ngIf="successMsg">{{ successMsg }}</div>
+    <div class="alert-error" *ngIf="errorMsg">{{ errorMsg }}</div>
+  </main>
+</div>
