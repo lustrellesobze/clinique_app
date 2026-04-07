@@ -1,0 +1,309 @@
+<div class="hospitalisation-container">
+  <header class="accueil-topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">✚</span>
+      <span class="brand-name">Clinique Espoir</span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-badge" *ngIf="auth.getCurrentUser() as u">
+        <span class="role-label">Hospitalisation</span>
+        <span class="user-name">· {{ u.prenom }} {{ u.nom }}</span>
+      </div>
+      <nav class="top-nav">
+        <a routerLink="/dashboard">Tableau de bord</a>
+        <a href="/" (click)="onLogout($event)">Déconnexion</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <h1>Gestion des Hospitalisations</h1>
+
+  <!-- Messages -->
+  <div *ngIf="error" class="alert alert-danger">
+    {{ error }}
+  </div>
+
+  <div *ngIf="successMessage" class="alert alert-success">
+    {{ successMessage }}
+  </div>
+
+  <!-- Vue Liste -->
+  <div *ngIf="currentView === 'list'">
+    <!-- Actions principales -->
+    <div class="actions-bar">
+      <button (click)="showAdmissionForm()" class="btn btn-primary">
+        + Nouvelle admission
+      </button>
+      <button (click)="loadRooms(); loadActiveHospitalizations()" class="btn btn-secondary">
+        Actualiser
+      </button>
+    </div>
+
+    <!-- Hospitalisations en cours -->
+    <div class="card">
+      <h2>Séjours en cours ({{ activeHospitalizations.length }})</h2>
+      
+      <div *ngIf="activeHospitalizations.length === 0" class="no-data">
+        Aucun séjour en cours
+      </div>
+
+      <table *ngIf="activeHospitalizations.length > 0" class="table">
+        <thead>
+          <tr>
+            <th>Patient</th>
+            <th>Chambre</th>
+            <th>Type</th>
+            <th>Médecin</th>
+            <th>Date admission</th>
+            <th>Jours</th>
+            <th>Acompte</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let hosp of activeHospitalizations">
+            <td><strong>{{ hosp.patient_name }}</strong></td>
+            <td>{{ hosp.room_numero }}</td>
+            <td><span class="badge badge-{{ hosp.room_type }}">{{ hosp.room_type }}</span></td>
+            <td>{{ hosp.medecin_name || '-' }}</td>
+            <td>{{ hosp.date_admission | date:'short' }}</td>
+            <td><strong>{{ hosp.nombre_jours }}</strong></td>
+            <td>{{ hosp.acompte_verse_fcfa | number:'1.0-0' }} FCFA</td>
+            <td>
+              <button (click)="selectForDischarge(hosp)" class="btn btn-sm btn-accent">
+                Clôturer
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Chambres disponibles -->
+    <div class="card">
+      <h2>Chambres disponibles</h2>
+      
+      <div class="filter-bar">
+        <label>
+          Filtrer par type:
+          <select [(ngModel)]="filterTypeChambre" (change)="filterRooms()" class="form-control">
+            <option value="">Tous les types</option>
+            <option value="commune">Commune</option>
+            <option value="individuelle">Individuelle</option>
+            <option value="vip">VIP</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="rooms-grid">
+        <div *ngFor="let room of availableRooms" class="room-card available">
+          <div class="room-header">
+            <span class="room-numero">{{ room.numero }}</span>
+            <span class="badge badge-{{ room.type_chambre }}">{{ room.type_chambre }}</span>
+          </div>
+          <div class="room-body">
+            <p class="room-description">{{ room.description }}</p>
+            <p class="room-tarif">{{ room.tarif_journalier_fcfa | number:'1.0-0' }} FCFA/jour</p>
+          </div>
+          <div class="room-status">
+            <span class="status-badge available">Disponible</span>
+          </div>
+        </div>
+
+        <div *ngFor="let room of occupiedRooms" class="room-card occupied">
+          <div class="room-header">
+            <span class="room-numero">{{ room.numero }}</span>
+            <span class="badge badge-{{ room.type_chambre }}">{{ room.type_chambre }}</span>
+          </div>
+          <div class="room-body">
+            <p class="room-description">{{ room.description }}</p>
+            <p class="room-tarif">{{ room.tarif_journalier_fcfa | number:'1.0-0' }} FCFA/jour</p>
+          </div>
+          <div class="room-status">
+            <span class="status-badge occupied">Occupée</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vue Admission -->
+  <div *ngIf="currentView === 'admission'" class="card">
+    <h2>Nouvelle admission</h2>
+
+    <form (ngSubmit)="admitPatient()">
+      <div class="form-section">
+        <h3>Informations patient</h3>
+        
+        <div class="form-group">
+          <label>
+            Rechercher patient <span class="req">*</span>
+            <input type="text" [(ngModel)]="admissionForm.patient_search" name="patient_search"
+                   class="form-control" placeholder="Nom, prénom ou code patient" required>
+          </label>
+          <button type="button" (click)="searchPatient()" class="btn btn-sm btn-secondary">
+            Rechercher
+          </button>
+        </div>
+
+        <div class="form-group">
+          <label>
+            ID Patient <span class="req">*</span>
+            <input type="text" [(ngModel)]="admissionForm.patient_id" name="patient_id"
+                   class="form-control" required readonly>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Sélection de la chambre</h3>
+        
+        <div class="rooms-grid">
+          <div *ngFor="let room of availableRooms" 
+               class="room-card selectable"
+               [class.selected]="admissionForm.room_id === room.id"
+               (click)="selectRoom(room)">
+            <div class="room-header">
+              <span class="room-numero">{{ room.numero }}</span>
+              <span class="badge badge-{{ room.type_chambre }}">{{ room.type_chambre }}</span>
+            </div>
+            <div class="room-body">
+              <p class="room-description">{{ room.description }}</p>
+              <p class="room-tarif">{{ room.tarif_journalier_fcfa | number:'1.0-0' }} FCFA/jour</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section" *ngIf="selectedRoom">
+        <h3>Détails de l'admission</h3>
+        
+        <div class="grid-2">
+          <div class="form-group">
+            <label>
+              Date et heure d'admission <span class="req">*</span>
+              <input type="datetime-local" [(ngModel)]="admissionForm.date_admission" 
+                     name="date_admission" class="form-control" required>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label>
+              Acompte versé (FCFA) <span class="req">*</span>
+              <input type="number" [(ngModel)]="admissionForm.acompte_verse_fcfa" 
+                     name="acompte" class="form-control" required min="0">
+            </label>
+            <small class="hint">Minimum requis: {{ (selectedRoom.tarif_journalier_fcfa * 0.5) | number:'1.0-0' }} FCFA (50%)</small>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>
+            Motif d'hospitalisation
+            <textarea [(ngModel)]="admissionForm.motif_hospitalisation" name="motif"
+                      class="form-control" rows="3"></textarea>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label>
+            Médecin traitant (optionnel)
+            <input type="text" [(ngModel)]="admissionForm.medecin_id" name="medecin"
+                   class="form-control" placeholder="ID du médecin">
+          </label>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" (click)="showList()" class="btn btn-secondary" [disabled]="loading">
+          Annuler
+        </button>
+        <button type="submit" class="btn btn-primary" [disabled]="loading || !admissionForm.patient_id || !admissionForm.room_id">
+          {{ loading ? 'Admission en cours...' : 'Admettre le patient' }}
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Vue Clôture -->
+  <div *ngIf="currentView === 'discharge' && selectedHospitalization" class="card">
+    <h2>Clôture du séjour - {{ selectedHospitalization.patient_name }}</h2>
+
+    <div class="hospitalization-summary">
+      <div class="summary-row">
+        <span>Chambre:</span>
+        <strong>{{ selectedHospitalization.room_numero }} ({{ selectedHospitalization.room_type }})</strong>
+      </div>
+      <div class="summary-row">
+        <span>Date d'admission:</span>
+        <strong>{{ selectedHospitalization.date_admission | date:'short' }}</strong>
+      </div>
+      <div class="summary-row">
+        <span>Tarif journalier:</span>
+        <strong>{{ selectedHospitalization.tarif_journalier | number:'1.0-0' }} FCFA</strong>
+      </div>
+      <div class="summary-row">
+        <span>Acompte versé:</span>
+        <strong>{{ selectedHospitalization.acompte_verse_fcfa | number:'1.0-0' }} FCFA</strong>
+      </div>
+    </div>
+
+    <form (ngSubmit)="dischargePatient()">
+      <div class="form-group">
+        <label>
+          Date et heure de sortie <span class="req">*</span>
+          <input type="datetime-local" [(ngModel)]="dischargeForm.date_sortie" 
+                 name="date_sortie" class="form-control" required>
+        </label>
+      </div>
+
+      <div class="totals">
+        <div class="row">
+          <span>Montant total estimé:</span>
+          <strong>{{ estimatedTotal | number:'1.0-0' }} FCFA</strong>
+        </div>
+        <div class="row">
+          <span>Acompte versé:</span>
+          <span>- {{ selectedHospitalization.acompte_verse_fcfa | number:'1.0-0' }} FCFA</span>
+        </div>
+        <div class="row total">
+          <span>Reste à payer:</span>
+          <strong>{{ resteAPayer | number:'1.0-0' }} FCFA</strong>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label>
+            Mode de paiement <span class="req">*</span>
+            <select [(ngModel)]="dischargeForm.mode_paiement" name="mode_paiement" class="form-control" required>
+              <option value="especes">Espèces</option>
+              <option value="carte">Carte bancaire</option>
+              <option value="mobile_money">Mobile Money</option>
+              <option value="cheque">Chèque</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label>
+            Référence de paiement
+            <input type="text" [(ngModel)]="dischargeForm.reference_paiement" 
+                   name="reference" class="form-control">
+          </label>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" (click)="showList()" class="btn btn-secondary" [disabled]="loading">
+          Annuler
+        </button>
+        <button type="submit" class="btn btn-primary" [disabled]="loading">
+          {{ loading ? 'Clôture en cours...' : 'Clôturer le séjour' }}
+        </button>
+      </div>
+    </form>
+  </div>
+  </main>
+</div>

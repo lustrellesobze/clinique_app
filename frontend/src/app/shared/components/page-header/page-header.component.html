@@ -1,0 +1,16 @@
+<header class="page-topbar">
+  <div class="brand">
+    <span class="brand-icon" aria-hidden="true">✚</span>
+    <span class="brand-name">Clinique Espoir</span>
+  </div>
+  <div class="topbar-right">
+    <div class="user-badge" *ngIf="auth.getCurrentUser() as u">
+      <span class="role-label">{{ departmentName }}</span>
+      <span class="user-name">· {{ u.prenom }} {{ u.nom }}</span>
+    </div>
+    <nav class="top-nav">
+      <a routerLink="/dashboard">Tableau de bord</a>
+      <a href="/" (click)="onLogout($event)">Déconnexion</a>
+    </nav>
+  </div>
+</header>

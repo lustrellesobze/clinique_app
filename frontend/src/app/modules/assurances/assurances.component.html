@@ -1,0 +1,206 @@
+<div class="assurances-container">
+  <header class="accueil-topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">✚</span>
+      <span class="brand-name">Clinique Espoir</span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-badge" *ngIf="auth.getCurrentUser() as u">
+        <span class="role-label">Gestion Assurances</span>
+        <span class="user-name">· {{ u.prenom }} {{ u.nom }}</span>
+      </div>
+      <nav class="top-nav">
+        <a routerLink="/dashboard">Tableau de bord</a>
+        <a href="/" (click)="onLogout($event)">Déconnexion</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <h1>Gestion des Créances Assurances</h1>
+
+  <!-- Messages -->
+  <div *ngIf="error" class="alert alert-danger">
+    {{ error }}
+  </div>
+
+  <div *ngIf="successMessage" class="alert alert-success">
+    {{ successMessage }}
+  </div>
+
+  <!-- Filtres -->
+  <div class="card filters-card">
+    <h2>Filtres</h2>
+    
+    <div class="filters-grid">
+      <div class="form-group">
+        <label>Compagnie d'assurance</label>
+        <select [(ngModel)]="filterCompagnie" (change)="onFilterChange()" class="form-control">
+          <option value="">Toutes les compagnies</option>
+          <option *ngFor="let company of companies" [value]="company.id">
+            {{ company.nom_compagnie }}
+          </option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Date début</label>
+        <input type="date" [(ngModel)]="filterDateDebut" (change)="onFilterChange()" class="form-control">
+      </div>
+
+      <div class="form-group">
+        <label>Date fin</label>
+        <input type="date" [(ngModel)]="filterDateFin" (change)="onFilterChange()" class="form-control">
+      </div>
+
+      <div class="form-group">
+        <label>Statut</label>
+        <select [(ngModel)]="filterStatut" (change)="onStatutFilterChange()" class="form-control">
+          <option value="">Tous les statuts</option>
+          <option value="en_attente">En attente</option>
+          <option value="partielle">Partielle</option>
+          <option value="payee">Payée</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="filter-actions">
+      <button (click)="loadClaims()" class="btn btn-secondary">
+        Actualiser
+      </button>
+    </div>
+  </div>
+
+  <!-- Actions principales -->
+  <div class="actions-bar" *ngIf="!showValidationForm">
+    <div class="selection-info">
+      <span *ngIf="selectedClaims.size > 0">
+        {{ selectedClaims.size }} créance(s) sélectionnée(s) - 
+        Total: {{ totalSelected | number:'1.0-0' }} FCFA
+      </span>
+    </div>
+    <div class="actions-buttons">
+      <button 
+        (click)="showValidation()" 
+        class="btn btn-primary"
+        [disabled]="selectedClaims.size === 0">
+        Valider le paiement
+      </button>
+      <button (click)="exportToPDF()" class="btn btn-secondary">
+        Export PDF
+      </button>
+      <button (click)="exportToExcel()" class="btn btn-secondary">
+        Export Excel
+      </button>
+    </div>
+  </div>
+
+  <!-- Liste des créances -->
+  <div class="card" *ngIf="!showValidationForm">
+    <h2>Créances en attente ({{ filteredClaims.length }})</h2>
+
+    <div *ngIf="loading" class="loading">
+      Chargement des créances...
+    </div>
+
+    <div *ngIf="!loading && filteredClaims.length === 0" class="no-data">
+      Aucune créance trouvée
+    </div>
+
+    <table *ngIf="!loading && filteredClaims.length > 0" class="table">
+      <thead>
+        <tr>
+          <th>
+            <input 
+              type="checkbox" 
+              [checked]="selectedClaims.size === filteredClaims.length && filteredClaims.length > 0"
+              (change)="selectAll()">
+          </th>
+          <th>N° Facture</th>
+          <th>Patient</th>
+          <th>Compagnie</th>
+          <th>Montant total</th>
+          <th>Part assurance</th>
+          <th>Date émission</th>
+          <th>Statut</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let claim of filteredClaims">
+          <td>
+            <input 
+              type="checkbox" 
+              [checked]="selectedClaims.has(claim.facture_id)"
+              (change)="toggleClaimSelection(claim.facture_id)">
+          </td>
+          <td><strong>{{ claim.numero_facture }}</strong></td>
+          <td>{{ claim.patient_nom }} {{ claim.patient_prenom }}</td>
+          <td>{{ claim.compagnie_assurance }}</td>
+          <td>{{ claim.montant_total | number:'1.0-0' }} FCFA</td>
+          <td><strong>{{ claim.part_assurance | number:'1.0-0' }} FCFA</strong></td>
+          <td>{{ claim.date_emission | date:'short' }}</td>
+          <td>
+            <span class="badge badge-{{ claim.statut }}">
+              {{ claim.statut === 'en_attente' ? 'En attente' : 
+                 claim.statut === 'partielle' ? 'Partielle' : 'Payée' }}
+            </span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Formulaire de validation -->
+  <div class="card" *ngIf="showValidationForm">
+    <h2>Validation de paiement</h2>
+
+    <div class="validation-summary">
+      <div class="summary-row">
+        <span>Nombre de factures:</span>
+        <strong>{{ selectedClaims.size }}</strong>
+      </div>
+      <div class="summary-row">
+        <span>Montant total:</span>
+        <strong>{{ totalSelected | number:'1.0-0' }} FCFA</strong>
+      </div>
+    </div>
+
+    <form (ngSubmit)="validatePayment()">
+      <div class="form-group">
+        <label>
+          Référence de paiement <span class="req">*</span>
+          <input 
+            type="text" 
+            [(ngModel)]="validationForm.reference_paiement" 
+            name="reference"
+            class="form-control" 
+            placeholder="Ex: VIREMENT-2026-001"
+            required>
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label>
+          Montant payé (FCFA) <span class="req">*</span>
+          <input 
+            type="number" 
+            [(ngModel)]="validationForm.montant_paye" 
+            name="montant"
+            class="form-control" 
+            required
+            readonly>
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" (click)="cancelValidation()" class="btn btn-secondary" [disabled]="loading">
+          Annuler
+        </button>
+        <button type="submit" class="btn btn-primary" [disabled]="loading">
+          {{ loading ? 'Validation en cours...' : 'Valider le paiement' }}
+        </button>
+      </div>
+    </form>
+  </div>
+  </main>
+</div>
