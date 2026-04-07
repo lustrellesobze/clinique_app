@@ -9,6 +9,7 @@ from app.routers import (
     audit,
     auth,
     consultations,
+    doctor,
     dashboard,
     hospitalization,
     imaging,
@@ -46,6 +47,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(accueil.router, prefix="/api")
 app.include_router(patients.router, prefix="/api")
 app.include_router(consultations.router, prefix="/api")
+app.include_router(doctor.router, prefix="/api")
 app.include_router(prescriptions.router, prefix="/api")
 app.include_router(invoices.router, prefix="/api")
 app.include_router(payments.router, prefix="/api")

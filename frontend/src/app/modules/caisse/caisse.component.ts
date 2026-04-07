@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -22,7 +22,7 @@ import {
   templateUrl: './caisse.component.html',
   styleUrls: ['./caisse.component.scss'],
 })
-export class CaisseComponent {
+export class CaisseComponent implements OnInit, OnDestroy {
   readonly auth = inject(AuthService);
   private readonly fb = inject(FormBuilder);
   private readonly caisse = inject(CaisseService);
@@ -41,6 +41,7 @@ export class CaisseComponent {
   paiementsFacture: PaiementOut[] = [];
   mobileInit: MobilePaymentInitOut | null = null;
   mobileStatus: PaymentStatusOut | null = null;
+  private ws: WebSocket | null = null;
 
   searchForm = this.fb.group({
     q: ['', [Validators.required, Validators.minLength(2)]],
@@ -85,6 +86,17 @@ export class CaisseComponent {
     const recu = Number(this.paymentForm.get('montant_recu')?.value ?? 0);
     const montant = Number(this.paymentForm.get('montant')?.value ?? 0);
     return Math.max(0, recu - montant);
+  }
+
+  ngOnInit(): void {
+    this.connectRealtime();
+  }
+
+  ngOnDestroy(): void {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
   }
 
   onSearchPatient(): void {
@@ -386,5 +398,36 @@ export class CaisseComponent {
   private resetAlerts(): void {
     this.successMsg = '';
     this.errorMsg = '';
+  }
+
+  private connectRealtime(): void {
+    try {
+      this.ws = new WebSocket(this.caisse.getCaisseWebSocketUrl());
+      this.ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data ?? '{}') as {
+            event?: string;
+            invoice_id?: string;
+            payment_status?: string;
+          };
+          if (msg.event === 'mobile_payment_updated') {
+            this.successMsg = `Mise à jour mobile reçue: ${msg.payment_status ?? 'ok'}`;
+            if (this.patientSelected) {
+              this.chargerFactures(this.patientSelected.id);
+            }
+            if (this.factureSelected?.id && msg.invoice_id === this.factureSelected.id) {
+              this.chargerPaiements(this.factureSelected.id);
+            }
+          }
+        } catch {
+          // Ignore malformed ws payload
+        }
+      };
+      this.ws.onclose = () => {
+        window.setTimeout(() => this.connectRealtime(), 3000);
+      };
+    } catch {
+      // Ignore WS init failure in local offline mode
+    }
   }
 }

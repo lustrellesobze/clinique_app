@@ -152,4 +152,17 @@ export class CaisseService {
   getInvoicePdfUrl(invoiceId: string): string {
     return `${this.api}/invoices/${invoiceId}/pdf`;
   }
+
+  getCaisseWebSocketUrl(): string {
+    const base = environment.apiUrl?.trim();
+    if (base) {
+      const normalized = base.replace(/\/+$/, '');
+      const wsBase = normalized.startsWith('https://')
+        ? normalized.replace('https://', 'wss://')
+        : normalized.replace('http://', 'ws://');
+      return `${wsBase}/api/webhooks/ws/caisse`;
+    }
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${window.location.host}/api/webhooks/ws/caisse`;
+  }
 }

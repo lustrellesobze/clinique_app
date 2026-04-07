@@ -1,0 +1,110 @@
+<div class="medecin-page">
+  <header class="topbar">
+    <div class="brand">Clinique Espoir</div>
+    <div class="right">
+      <span *ngIf="auth.getCurrentUser() as u">Dr. {{ u.nom }} {{ u.prenom }}</span>
+      <a href="/" (click)="onLogout($event)">Deconnexion</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="card">
+      <label class="search">
+        <span>Rechercher patient</span>
+        <input
+          type="text"
+          [ngModel]="searchTerm"
+          (ngModelChange)="searchTerm = $event; filtrerPatients()"
+          placeholder="Code, nom, prenom, telephone"
+        />
+      </label>
+      <div class="patients" *ngIf="filteredPatients.length > 0">
+        <button
+          type="button"
+          class="patient"
+          *ngFor="let p of filteredPatients"
+          [class.active]="selectedPatient?.patient_id === p.patient_id"
+          (click)="choisirPatient(p)"
+        >
+          <strong>{{ p.code_patient }}</strong>
+          <span>{{ p.nom }} {{ p.prenom }}</span>
+          <small>{{ p.assureur || 'Aucune assurance' }}</small>
+        </button>
+      </div>
+    </section>
+
+    <section class="card" *ngIf="selectedPatient">
+      <h2>{{ selectedPatient.nom }} {{ selectedPatient.prenom }}</h2>
+      <p class="muted">
+        {{ selectedPatient.code_patient }} · {{ selectedPatient.telephone || '-' }}
+      </p>
+    </section>
+
+    <section class="card" *ngIf="selectedPatient">
+      <h3>Observations et diagnostic</h3>
+      <form [formGroup]="consultationForm">
+        <label><span>Observations</span><textarea rows="4" formControlName="observations"></textarea></label>
+        <label><span>Diagnostic</span><textarea rows="3" formControlName="diagnostic"></textarea></label>
+        <div class="grid4">
+          <label><span>Poids</span><input type="number" formControlName="poids_kg" /></label>
+          <label><span>Taille</span><input type="number" formControlName="taille_cm" /></label>
+          <label><span>Temperature</span><input type="number" formControlName="temperature_c" /></label>
+          <label><span>Tension</span><input type="text" formControlName="tension" /></label>
+        </div>
+      </form>
+    </section>
+
+    <section class="card" *ngIf="selectedPatient">
+      <h3>Prescription</h3>
+      <form [formGroup]="prescriptionForm">
+        <div class="grid2">
+          <label>
+            <span>Type prescription</span>
+            <select formControlName="type_prescription">
+              <option value="pharmacie">Pharmacie</option>
+              <option value="laboratoire">Laboratoire</option>
+              <option value="imagerie">Radiologie / Imagerie</option>
+              <option value="hospitalisation">Hospitalisation</option>
+              <option value="specialiste">Specialiste</option>
+              <option value="chirurgie">Chirurgie</option>
+              <option value="orl">ORL</option>
+            </select>
+          </label>
+          <label>
+            <span>Destination transfert</span>
+            <select formControlName="transfer_destination">
+              <option value="pharmacie">Pharmacie</option>
+              <option value="laboratoire">Laboratoire</option>
+              <option value="imagerie">Radiologie / Imagerie</option>
+              <option value="hospitalisation">Hospitalisation</option>
+              <option value="specialiste">Specialiste</option>
+              <option value="chirurgie">Chirurgie</option>
+              <option value="orl">ORL</option>
+            </select>
+          </label>
+        </div>
+
+        <div formArrayName="items" class="items">
+          <div class="item" *ngFor="let it of itemsArray.controls; index as i" [formGroupName]="i">
+            <input placeholder="Nom medicament/examen" formControlName="nom_item" />
+            <input placeholder="Description/posologie" formControlName="description" />
+            <input type="number" min="1" formControlName="quantite" />
+            <input type="number" min="0" formControlName="prix_unitaire" />
+            <button type="button" (click)="supprimerItem(i)">Supprimer</button>
+          </div>
+        </div>
+        <button type="button" class="btn-secondary" (click)="ajouterItem()">+ Ajouter item</button>
+        <label><span>Notes</span><textarea rows="2" formControlName="notes"></textarea></label>
+      </form>
+    </section>
+
+    <div class="actions" *ngIf="selectedPatient">
+      <button class="btn-primary" [disabled]="saving" (click)="enregistrerEtTransferer()">
+        {{ saving ? 'Enregistrement...' : 'ENREGISTRER ET TRANSFERER' }}
+      </button>
+    </div>
+
+    <div class="ok" *ngIf="successMsg">{{ successMsg }}</div>
+    <div class="err" *ngIf="errorMsg">{{ errorMsg }}</div>
+  </main>
+</div>

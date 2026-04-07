@@ -1,0 +1,76 @@
+<div class="pharmacie-container">
+  <header class="accueil-topbar">
+    <div class="brand"><span class="brand-icon">✚</span><span class="brand-name">Clinique Espoir</span></div>
+    <div class="topbar-right">
+      <div class="user-badge" *ngIf="auth.getCurrentUser() as u">
+        <span class="role-label">Pharmacie</span>
+        <span class="user-name">· {{ u.prenom }} {{ u.nom }}</span>
+      </div>
+      <nav class="top-nav">
+        <a routerLink="/dashboard">Tableau de bord</a>
+        <a href="/" (click)="onLogout($event)">Déconnexion</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <h1>Pharmacie - Ordonnances transférées</h1>
+    <div *ngIf="error" class="alert">{{ error }}</div>
+
+    <div *ngIf="!selectedPrescription">
+      <button (click)="loadPrescriptions()">Actualiser</button>
+      <table *ngIf="prescriptions.length">
+        <thead>
+          <tr><th>Patient</th><th>Médecin</th><th>Médicaments</th><th>Montant</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let p of prescriptions">
+            <td>{{ p.patient_name }}</td>
+            <td>{{ p.medecin_name }}</td>
+            <td>{{ p.items.length }}</td>
+            <td>{{ p.montant_total | number:'1.0-0' }} FCFA</td>
+            <td><button (click)="selectPrescription(p)">Traiter</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div *ngIf="selectedPrescription">
+      <h2>{{ selectedPrescription.patient_name }}</h2>
+      <table>
+        <thead>
+          <tr><th>Médicament</th><th>Qté</th><th>PU</th><th>Total</th><th>Substituer</th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of selectedPrescription.items">
+            <td>{{ item.nom_item }}</td>
+            <td>{{ item.quantite }}</td>
+            <td>{{ item.prix_unitaire | number:'1.0-0' }}</td>
+            <td>{{ (item.prix_unitaire * item.quantite) | number:'1.0-0' }}</td>
+            <td>
+              <input type="radio" name="itemSub" [value]="item.id" [(ngModel)]="selectedItemId" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Substitution équivalent</h3>
+      <input [(ngModel)]="subEquivalent" placeholder="Nom équivalent" />
+      <input [(ngModel)]="subMotif" placeholder="Motif (optionnel)" />
+      <button (click)="substituteSelectedItem()">Enregistrer équivalent</button>
+
+      <h3>Paiement</h3>
+      <select [(ngModel)]="modePaiement">
+        <option value="especes">Espèces</option>
+        <option value="mobile_money">Mobile Money</option>
+        <option value="carte">Carte</option>
+      </select>
+      <input type="number" [(ngModel)]="remiseFidelite" min="0" placeholder="Remise" />
+      <input type="number" [(ngModel)]="partAssurance" min="0" placeholder="Part assurance" />
+      <p>Part patient: {{ partPatient | number:'1.0-0' }} FCFA</p>
+
+      <button (click)="cancelSelection()">Annuler</button>
+      <button (click)="createInvoice()" [disabled]="loading || partPatient < 0">Créer facture</button>
+    </div>
+  </main>
+</div>
