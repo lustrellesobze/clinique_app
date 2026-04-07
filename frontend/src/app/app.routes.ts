@@ -38,13 +38,13 @@ export const routes: Routes = [
     data: { roles: ['infirmiere_accueil', 'admin'] },
   },
   {
-<<<<<<< HEAD
     path: 'caisse',
     loadComponent: () =>
       import('./modules/caisse/caisse.component').then((m) => m.CaisseComponent),
     canActivate: [AuthGuard],
     data: { roles: ['caissier_central', 'admin'] },
-=======
+  },
+  {
     path: 'laboratoire',
     loadComponent: () =>
       import('./modules/laboratoire/laboratoire.component').then(
@@ -79,7 +79,6 @@ export const routes: Routes = [
       ),
     canActivate: [AuthGuard],
     data: { roles: ['gestionnaire_assurance', 'comptable', 'admin'] },
->>>>>>> develop
   },
 
   // Redirection
