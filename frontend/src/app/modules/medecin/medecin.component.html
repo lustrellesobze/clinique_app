@@ -1,110 +1,279 @@
 <div class="medecin-page">
-  <header class="topbar">
-    <div class="brand">Clinique Espoir</div>
-    <div class="right">
-      <span *ngIf="auth.getCurrentUser() as u">Dr. {{ u.nom }} {{ u.prenom }}</span>
-      <a href="/" (click)="onLogout($event)">Deconnexion</a>
+  <header class="med-topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">✚</span>
+      <span class="brand-name">Clinique Espoir</span>
+    </div>
+    <div class="topbar-meta">
+      <span>{{ medecinLibelle }} • {{ dateHeureEntete }}</span>
+      <nav class="top-nav">
+        <a routerLink="/dashboard">Tableau de bord</a>
+        <a href="/" (click)="onLogout($event)">Déconnexion</a>
+      </nav>
     </div>
   </header>
 
-  <main class="content">
-    <section class="card">
-      <label class="search">
-        <span>Rechercher patient</span>
+  <main class="med-main">
+    <section class="card card-search">
+      <label class="search-label">🔍 Rechercher Patient</label>
+      <form class="search-row" [formGroup]="searchForm" (ngSubmit)="rechercherPatient()">
         <input
           type="text"
-          [ngModel]="searchTerm"
-          (ngModelChange)="searchTerm = $event; filtrerPatients()"
-          placeholder="Code, nom, prenom, telephone"
+          formControlName="code"
+          placeholder="P-2026-00123"
+          [disabled]="loadingSearch"
         />
-      </label>
-      <div class="patients" *ngIf="filteredPatients.length > 0">
-        <button
-          type="button"
-          class="patient"
-          *ngFor="let p of filteredPatients"
-          [class.active]="selectedPatient?.patient_id === p.patient_id"
-          (click)="choisirPatient(p)"
-        >
-          <strong>{{ p.code_patient }}</strong>
-          <span>{{ p.nom }} {{ p.prenom }}</span>
-          <small>{{ p.assureur || 'Aucune assurance' }}</small>
+        <button type="submit" class="btn-search" [disabled]="loadingSearch" aria-label="Charger">
+          {{ loadingSearch ? '…' : '🔍' }}
         </button>
+      </form>
+
+      <div class="patients-quick" *ngIf="allPatients.length > 0 && !selectedPatient">
+        <p class="muted">Patients en attente de consultation :</p>
+        <div class="patients-chips">
+          <button
+            type="button"
+            class="chip"
+            *ngFor="let p of allPatients"
+            (click)="selectionnerPatient(p)"
+          >
+            {{ p.code_patient }} — {{ p.nom }} {{ p.prenom }}
+          </button>
+        </div>
       </div>
     </section>
 
-    <section class="card" *ngIf="selectedPatient">
-      <h2>{{ selectedPatient.nom }} {{ selectedPatient.prenom }}</h2>
-      <p class="muted">
-        {{ selectedPatient.code_patient }} · {{ selectedPatient.telephone || '-' }}
-      </p>
+    <section
+      id="medecin-transfert-confirmation"
+      class="transfert-banner"
+      *ngIf="successMsg || transfertLignes.length"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="transfert-banner-head">
+        <strong class="transfert-banner-title">✓ {{ successMsg }}</strong>
+        <button type="button" class="btn-dismiss" (click)="fermerConfirmation()">×</button>
+      </div>
+      <ul class="transfert-list" *ngIf="transfertLignes.length">
+        <li *ngFor="let t of transfertLignes">
+          <span class="transfert-icone" aria-hidden="true">{{ t.icone }}</span>
+          <span>
+            <strong>{{ t.libelle }}</strong> — {{ t.detail }}
+          </span>
+        </li>
+      </ul>
     </section>
 
-    <section class="card" *ngIf="selectedPatient">
-      <h3>Observations et diagnostic</h3>
-      <form [formGroup]="consultationForm">
-        <label><span>Observations</span><textarea rows="4" formControlName="observations"></textarea></label>
-        <label><span>Diagnostic</span><textarea rows="3" formControlName="diagnostic"></textarea></label>
-        <div class="grid4">
-          <label><span>Poids</span><input type="number" formControlName="poids_kg" /></label>
-          <label><span>Taille</span><input type="number" formControlName="taille_cm" /></label>
-          <label><span>Temperature</span><input type="number" formControlName="temperature_c" /></label>
-          <label><span>Tension</span><input type="text" formControlName="tension" /></label>
-        </div>
-      </form>
+    <section class="patient-banner" *ngIf="selectedPatient as sp">
+      <div class="banner-left">
+        <h2>{{ sp.nom }} {{ sp.prenom }}</h2>
+        <p class="banner-meta">
+          <span *ngIf="sp.age_ans != null">{{ sp.age_ans }} ans</span>
+          <span *ngIf="sp.age_ans == null">Âge non renseigné</span>
+          • {{ sexeLabel }}
+          • Assurance : {{ sp.assureur || 'Non assuré' }}
+        </p>
+      </div>
+      <div class="banner-right">
+        <p>Dernière consultation : {{ derniereConsultationLabel }}</p>
+        <p>Allergies : {{ sp.allergies_connues || record?.allergies_connues || 'Aucune connue' }}</p>
+      </div>
     </section>
 
-    <section class="card" *ngIf="selectedPatient">
-      <h3>Prescription</h3>
-      <form [formGroup]="prescriptionForm">
-        <div class="grid2">
-          <label>
-            <span>Type prescription</span>
-            <select formControlName="type_prescription">
-              <option value="pharmacie">Pharmacie</option>
-              <option value="laboratoire">Laboratoire</option>
-              <option value="imagerie">Radiologie / Imagerie</option>
-              <option value="hospitalisation">Hospitalisation</option>
-              <option value="specialiste">Specialiste</option>
-              <option value="chirurgie">Chirurgie</option>
-              <option value="orl">ORL</option>
-            </select>
-          </label>
-          <label>
-            <span>Destination transfert</span>
-            <select formControlName="transfer_destination">
-              <option value="pharmacie">Pharmacie</option>
-              <option value="laboratoire">Laboratoire</option>
-              <option value="imagerie">Radiologie / Imagerie</option>
-              <option value="hospitalisation">Hospitalisation</option>
-              <option value="specialiste">Specialiste</option>
-              <option value="chirurgie">Chirurgie</option>
-              <option value="orl">ORL</option>
-            </select>
-          </label>
+    <form [formGroup]="dossierForm" *ngIf="selectedPatient">
+      <section class="card">
+        <h3>Observations</h3>
+        <textarea
+          rows="5"
+          formControlName="observations"
+          placeholder="Symptômes, examen clinique, constantes…"
+        ></textarea>
+
+        <h3 class="section-gap">Diagnostic</h3>
+        <textarea
+          rows="3"
+          formControlName="diagnostic"
+          placeholder="Diagnostic retenu"
+        ></textarea>
+      </section>
+
+      <section class="card card-rx">
+        <div class="card-head">
+          <h3>💊 Prescription Médicaments</h3>
+          <button type="button" class="btn-add" (click)="ajouterMedicament()">+ Ajouter</button>
+        </div>
+        <p class="muted hint">Prescription libre — le stock pharmacie n’est pas contrôlé ici.</p>
+
+        <div class="rx-empty muted" *ngIf="medicamentsArray.length === 0">
+          Aucun médicament. Cliquez sur « + Ajouter ».
         </div>
 
-        <div formArrayName="items" class="items">
-          <div class="item" *ngFor="let it of itemsArray.controls; index as i" [formGroupName]="i">
-            <input placeholder="Nom medicament/examen" formControlName="nom_item" />
-            <input placeholder="Description/posologie" formControlName="description" />
-            <input type="number" min="1" formControlName="quantite" />
-            <input type="number" min="0" formControlName="prix_unitaire" />
-            <button type="button" (click)="supprimerItem(i)">Supprimer</button>
+        <div formArrayName="medicaments" class="rx-list">
+          <div
+            class="rx-item"
+            *ngFor="let m of medicamentsArray.controls; let i = index; trackBy: trackByIndex"
+            [formGroupName]="i"
+          >
+            <div class="rx-item-head">
+              <strong>Médicament {{ i + 1 }}</strong>
+              <button type="button" class="btn-del" (click)="supprimerMedicament(i)">
+                Supprimer
+              </button>
+            </div>
+            <label>
+              <span class="field-label">Médicament</span>
+              <input formControlName="nom" placeholder="Ex. Paracétamol 500mg" />
+            </label>
+            <label>
+              <span class="field-label">Quantité</span>
+              <input formControlName="quantite_libelle" placeholder="Ex. 20 comprimés" />
+            </label>
+            <label>
+              <span class="field-label">Instructions</span>
+              <input
+                formControlName="instructions"
+                placeholder="Ex. 1 cp × 3/jour pendant 5 jours"
+              />
+            </label>
           </div>
         </div>
-        <button type="button" class="btn-secondary" (click)="ajouterItem()">+ Ajouter item</button>
-        <label><span>Notes</span><textarea rows="2" formControlName="notes"></textarea></label>
-      </form>
-    </section>
+      </section>
 
-    <div class="actions" *ngIf="selectedPatient">
-      <button class="btn-primary" [disabled]="saving" (click)="enregistrerEtTransferer()">
-        {{ saving ? 'Enregistrement...' : 'ENREGISTRER ET TRANSFERER' }}
-      </button>
-    </div>
+      <section class="card card-rx">
+        <div class="card-head">
+          <h3>🔬 Prescription Examens</h3>
+          <button type="button" class="btn-add" (click)="ajouterExamen()">+ Ajouter</button>
+        </div>
 
-    <div class="ok" *ngIf="successMsg">{{ successMsg }}</div>
-    <div class="err" *ngIf="errorMsg">{{ errorMsg }}</div>
+        <div class="exam-presets">
+          <span class="muted">Examens fréquents :</span>
+          <button
+            type="button"
+            class="preset-chip"
+            *ngFor="let lib of examensCourants"
+            (click)="ajouterExamenCourant(lib)"
+          >
+            + {{ lib }}
+          </button>
+        </div>
+
+        <div class="rx-empty muted" *ngIf="examensLignes.length === 0">
+          Aucun examen. Cliquez sur « + Ajouter » ou choisissez un examen ci-dessus.
+        </div>
+
+        <div class="exam-list">
+          <div
+            class="exam-item"
+            *ngFor="let ex of examensLignes; trackBy: trackExamenUid"
+          >
+            <div class="exam-check">
+              <input
+                type="checkbox"
+                [checked]="ex.actif"
+                (change)="onExamenActifChange(ex, $any($event.target).checked)"
+              />
+              <input
+                type="text"
+                [value]="ex.nom"
+                (input)="onExamenNomInput(ex, $any($event.target).value)"
+                placeholder="Nom de l'examen"
+              />
+            </div>
+            <button type="button" class="btn-del" (click)="supprimerExamen(ex.uid)">
+              Supprimer
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card card-orient">
+        <h3>Orienter le patient vers :</h3>
+        <p class="muted hint">
+          <strong>Pharmacie</strong> et <strong>laboratoire</strong> ne se cochent pas ici : le
+          transfert se fait automatiquement si vous avez prescrit des médicaments ou des examens
+          ci-dessus. Utilisez les boutons ci-dessous uniquement pour une orientation
+          complémentaire.
+        </p>
+
+        <div class="orient-auto">
+          <div
+            class="orient-auto-item"
+            [class.orient-auto-item--on]="nbMedicamentsRenseignes > 0"
+          >
+            <span class="orient-auto-label">💊 Pharmacie</span>
+            <span class="orient-auto-status" *ngIf="nbMedicamentsRenseignes > 0">
+              Automatique — {{ nbMedicamentsRenseignes }} médicament(s) à l’enregistrement
+            </span>
+            <span class="orient-auto-status orient-auto-status--off" *ngIf="nbMedicamentsRenseignes === 0">
+              Aucun médicament prescrit
+            </span>
+          </div>
+          <div
+            class="orient-auto-item"
+            [class.orient-auto-item--on]="nbExamensActifs > 0"
+          >
+            <span class="orient-auto-label">🔬 Laboratoire</span>
+            <span class="orient-auto-status" *ngIf="nbExamensActifs > 0">
+              Automatique — {{ nbExamensActifs }} examen(s) à l’enregistrement
+            </span>
+            <span class="orient-auto-status orient-auto-status--off" *ngIf="nbExamensActifs === 0">
+              Aucun examen prescrit
+            </span>
+          </div>
+        </div>
+
+        <p class="orient-extra-label muted">Orientation complémentaire (optionnel) :</p>
+        <div class="orient-grid">
+          <button
+            type="button"
+            class="orient-btn"
+            [class.active]="orientationActive('hospitalisation')"
+            (click)="toggleOrientation('hospitalisation')"
+          >
+            🏥 Hospitalisation
+          </button>
+          <button
+            type="button"
+            class="orient-btn"
+            [class.active]="orientationActive('specialiste')"
+            (click)="toggleOrientation('specialiste')"
+          >
+            👨‍⚕️ Spécialiste
+          </button>
+          <button
+            type="button"
+            class="orient-btn"
+            [class.active]="orientationActive('imagerie')"
+            (click)="toggleOrientation('imagerie')"
+          >
+            📷 Imagerie
+          </button>
+          <button
+            type="button"
+            class="orient-btn"
+            [class.active]="orientationActive('chirurgie')"
+            (click)="toggleOrientation('chirurgie')"
+          >
+            ⚕️ Chirurgie
+          </button>
+        </div>
+      </section>
+
+      <div class="footer-actions">
+        <button type="button" class="btn-cancel" (click)="annuler()" [disabled]="saving">
+          Annuler
+        </button>
+        <button
+          type="button"
+          class="btn-save"
+          (click)="enregistrerEtTransferer()"
+          [disabled]="saving"
+        >
+          {{ saving ? 'Enregistrement…' : 'ENREGISTRER ET TRANSFÉRER' }}
+        </button>
+      </div>
+    </form>
+
+    <div class="alert err" *ngIf="errorMsg" role="alert">{{ errorMsg }}</div>
   </main>
 </div>

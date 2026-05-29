@@ -25,6 +25,13 @@
         Code patient : <code>{{ s.patient.code_patient }}</code> — Total à encaisser :
         <strong>{{ s.passage.total_fcfa | number : '1.0-0' }} FCFA</strong>
       </p>
+      <p *ngIf="s.facture as f">
+        Facture : <code>{{ f.numero_facture }}</code>
+      </p>
+      <p *ngIf="s.facture?.medecin_nom">
+        Consultation : <strong>{{ s.facture?.medecin_nom }}</strong>
+        <span *ngIf="s.facture?.batiment"> — {{ s.facture?.batiment }}</span>
+      </p>
       <button type="button" class="btn-secondary" (click)="nouveauDossier()">
         Nouvel enregistrement
       </button>
@@ -53,9 +60,6 @@
             >
             <label class="radio"
               ><input type="radio" formControlName="sexe" value="F" /> Féminin</label
-            >
-            <label class="radio"
-              ><input type="radio" formControlName="sexe" value="autre" /> Autre</label
             >
           </fieldset>
           <label>
@@ -124,7 +128,7 @@
             <select formControlName="medecin_id">
               <option value="">Sélectionner</option>
               <option *ngFor="let m of medecins" [value]="m.id">
-                Dr {{ m.prenom }} {{ m.nom }}
+                Dr {{ m.prenom }} {{ m.nom | uppercase }}
               </option>
             </select>
           </label>
@@ -145,9 +149,11 @@
         <div class="grid-2" *ngIf="form.get('est_assure')?.value === 'oui'">
           <label>
             <span>Compagnie d'assurance</span>
-            <select formControlName="compagnie_assurance">
+            <select formControlName="assurance_id">
               <option value="">Sélectionner</option>
-              <option *ngFor="let c of assureurs" [value]="c">{{ c }}</option>
+              <option *ngFor="let c of assureursActifs" [value]="c.id">
+                {{ c.nom_compagnie }}
+              </option>
             </select>
           </label>
           <label>

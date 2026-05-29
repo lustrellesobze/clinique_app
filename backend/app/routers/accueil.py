@@ -12,13 +12,20 @@ from app.core.dependencies import get_current_user, require_role
 from app.database import get_db
 from app.models.patient import Patient
 from app.models.passage_accueil import PassageAccueil, StatutPassage
+from app.models.insurance import Insurance
+from app.services.audit_service import log_audit
 from app.models.user import User, UserRole
 from app.schemas.accueil import (
+    FactureAccueilOut,
     InscriptionPatientCreate,
     InscriptionPatientResponse,
     MedecinOut,
     PassageAccueilOut,
     PatientOut,
+)
+from app.services.consultation_info_service import (
+    creer_facture_consultation_depuis_passage,
+    get_consultation_info,
 )
 
 router = APIRouter(prefix="/accueil", tags=["accueil"])
@@ -62,9 +69,13 @@ def liste_medecins(
     _: User = Depends(_role_accueil),
 ):
     try:
-        stmt = select(User).where(
-            User.role == UserRole.medecin,
-            User.est_actif.is_(True),
+        stmt = (
+            select(User)
+            .where(
+                User.role == UserRole.medecin,
+                User.est_actif.is_(True),
+            )
+            .order_by(User.nom, User.prenom)
         )
         users = db.scalars(stmt).all()
         return [
@@ -98,11 +109,34 @@ def creer_inscription(
                 detail="Médecin invalide ou inactif",
             )
 
+        assurance = None
+        compagnie_nom = None
         if data.est_assure:
-            if not data.compagnie_assurance or not data.numero_assure:
+            if not data.numero_assure:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Patient assuré : renseigner la compagnie et le numéro d'assuré",
+                    detail="Patient assuré : renseigner le numéro d'assuré",
+                )
+            if data.assurance_id:
+                assurance = db.get(Insurance, data.assurance_id)
+                if not assurance or not assurance.est_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Compagnie d'assurance invalide ou inactive",
+                    )
+                compagnie_nom = assurance.nom_compagnie
+            elif data.compagnie_assurance:
+                assurance = db.scalars(
+                    select(Insurance).where(
+                        Insurance.nom_compagnie == data.compagnie_assurance.strip(),
+                        Insurance.est_active.is_(True),
+                    )
+                ).first()
+                compagnie_nom = data.compagnie_assurance.strip()
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Patient assuré : sélectionner une compagnie d'assurance",
                 )
 
         code = _generer_code_patient(db)
@@ -117,7 +151,8 @@ def creer_inscription(
             email=data.email,
             contact_urgence=data.contact_urgence,
             medecin_id=data.medecin_id,
-            assureur=data.compagnie_assurance if data.est_assure else None,
+            assurance_id=assurance.id if assurance else None,
+            assureur=compagnie_nom if data.est_assure else None,
             numero_police_assurance=data.numero_assure if data.est_assure else None,
             est_actif=True,
         )
@@ -142,7 +177,7 @@ def creer_inscription(
             type_consultation=data.type_consultation,
             derniere_date_regles=data.derniere_date_regles,
             est_assure=data.est_assure,
-            compagnie_assurance=data.compagnie_assurance,
+            compagnie_assurance=compagnie_nom,
             date_validite_assurance=data.date_validite_assurance,
             numero_assure=data.numero_assure,
             montant_consultation_fcfa=montant,
@@ -150,9 +185,43 @@ def creer_inscription(
             statut=StatutPassage.enregistre,
         )
         db.add(passage)
+        db.flush()
+
+        facture = creer_facture_consultation_depuis_passage(
+            db, patient, passage, commentaire=None
+        )
+        info = get_consultation_info(db, patient, passage)
+
+        log_audit(
+            db,
+            user_id=current.id,
+            action="patient_create",
+            entity_type="patient",
+            entity_id=patient.id,
+            details={
+                "code_patient": patient.code_patient,
+                "patient_nom": f"{patient.prenom} {patient.nom}",
+                "medecin_nom": info.get("medecin_nom"),
+                "numero_facture": facture.numero_facture,
+            },
+        )
+        log_audit(
+            db,
+            user_id=current.id,
+            action="invoice_create",
+            entity_type="facture",
+            entity_id=facture.id,
+            details={
+                "numero_facture": facture.numero_facture,
+                "patient_code": patient.code_patient,
+                "montant": float(facture.montant_total),
+            },
+        )
+
         db.commit()
         db.refresh(patient)
         db.refresh(passage)
+        db.refresh(facture)
     except HTTPException:
         db.rollback()
         raise
@@ -178,11 +247,25 @@ def creer_inscription(
         enregistre_par_id=passage.enregistre_par_id,
     )
 
+    facture_out = FactureAccueilOut(
+        id=facture.id,
+        numero_facture=facture.numero_facture,
+        total_fcfa=Decimal(str(round(total, 2))),
+        medecin_nom=info.get("medecin_nom"),
+        batiment=info.get("batiment"),
+    )
+
+    med_label = info.get("medecin_nom") or "le médecin attribué"
+    bat_label = info.get("batiment") or "le bâtiment indiqué sur la facture"
+
     return InscriptionPatientResponse(
         patient=_patient_to_out(patient),
         passage=passage_out,
+        facture=facture_out,
         message_transfert=(
-            f"Enregistrement OK. Communiquer au médecin et à la caisse "
-            f"l'identifiant patient : {patient.code_patient} (passage {passage.id[:8]}…)."
+            f"Enregistrement OK. Le patient doit se rendre à la "
+            f"caisse centrale avec le code {patient.code_patient} pour régler la "
+            f"facture {facture.numero_facture}. Après paiement : consulter {med_label} "
+            f"— {bat_label}."
         ),
     )

@@ -1,0 +1,133 @@
+<div class="admin-layout">
+  <header class="admin-topbar">
+    <div class="topbar-brand">
+      <span class="brand-icon" aria-hidden="true">🏥</span>
+      <span class="brand-name">Clinique Espoir</span>
+    </div>
+    <div class="topbar-right">
+      <button type="button" class="notif-btn" title="Notifications" aria-label="3 notifications">
+        🔔
+        <span class="notif-badge">3</span>
+      </button>
+      <div class="user-pill">
+        <span class="user-avatar">{{ userInitials }}</span>
+        <div class="user-text">
+          <strong>{{ userLabel }}</strong>
+          <span>{{ roleLabel }}</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="admin-body">
+    <aside class="admin-sidebar">
+      <nav class="sidebar-nav">
+        <ng-container *ngFor="let item of navItems">
+          <a
+            *ngIf="item.route && !item.soon"
+            [routerLink]="item.route"
+            routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: item.route === '/dashboard' }"
+            class="nav-item"
+          >
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </a>
+          <span *ngIf="item.soon" class="nav-item nav-item--soon" [title]="'Bientôt disponible'">
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </span>
+        </ng-container>
+      </nav>
+      <button type="button" class="nav-logout" (click)="onLogout($event)">Déconnexion</button>
+    </aside>
+
+    <main class="admin-main">
+      <div class="main-head">
+        <div>
+          <h1>Tableau de Bord Financier</h1>
+          <p class="main-date">Aujourd'hui : {{ dateAujourdHuiLabel }}</p>
+        </div>
+        <div class="main-actions">
+          <label class="filter-date">
+            <span>Du</span>
+            <input type="date" [(ngModel)]="dateDebut" />
+          </label>
+          <label class="filter-date">
+            <span>Au</span>
+            <input type="date" [(ngModel)]="dateFin" />
+          </label>
+          <button type="button" class="btn-secondary" (click)="reload()" [disabled]="loading">
+            Actualiser
+          </button>
+          <button type="button" class="btn-secondary" (click)="ouvrirPdf()" [disabled]="loading || !data">
+            PDF
+          </button>
+        </div>
+      </div>
+
+      <p class="loading" *ngIf="loading">Chargement…</p>
+      <p class="error" *ngIf="errorMsg">{{ errorMsg }}</p>
+
+      <section class="kpi-grid" *ngIf="summary">
+        <article class="kpi-card kpi-card--blue">
+          <div class="kpi-label">Chiffre d'Affaires</div>
+          <div class="kpi-value">{{ summary.chiffre_affaires | number : '1.0-0' }} F</div>
+          <div
+            class="kpi-trend"
+            *ngIf="summary.variation_pct != null"
+            [class.kpi-trend--down]="summary.variation_pct < 0"
+          >
+            {{ summary.variation_pct >= 0 ? '↑' : '↓' }}
+            {{ summary.variation_pct > 0 ? '+' : '' }}{{ summary.variation_pct }}% vs hier
+          </div>
+          <div class="kpi-progress">
+            <div class="kpi-progress-bar" [style.width.%]="objectifPct"></div>
+          </div>
+          <div class="kpi-foot">{{ objectifPct }}% de l'objectif</div>
+        </article>
+
+        <article class="kpi-card kpi-card--green">
+          <div class="kpi-label">Factures Aujourd'hui</div>
+          <div class="kpi-value">{{ summary.factures_total }}</div>
+          <div class="kpi-breakdown">
+            <span class="ok">{{ summary.factures_payees }} payées</span>
+            •
+            <span class="wait">{{ summary.factures_en_attente }} en attente</span>
+            •
+            <span class="bad">{{ summary.factures_impayees }} impayées</span>
+          </div>
+        </article>
+
+        <article class="kpi-card kpi-card--amber">
+          <div class="kpi-label">Patients Enregistrés</div>
+          <div class="kpi-value">{{ summary.patients_enregistres }}</div>
+          <div class="kpi-foot">Passages accueil aujourd'hui</div>
+        </article>
+      </section>
+
+      <section class="top-services card" *ngIf="summary?.services_plus_consultes?.length">
+        <h2>Services les plus consultés (30 derniers jours)</h2>
+        <ul class="top-services-list">
+          <li *ngFor="let s of summary!.services_plus_consultes; let i = index">
+            <span class="rank">{{ i + 1 }}</span>
+            <span class="svc-name">{{ s.libelle }}</span>
+            <span class="svc-count">{{ s.nombre }} facture(s)</span>
+            <span class="svc-pct" *ngIf="s.pourcentage != null">{{ s.pourcentage }}%</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="charts-row" *ngIf="data">
+        <div class="chart-card">
+          <h2>Par service</h2>
+          <canvas id="chartService"></canvas>
+        </div>
+        <div class="chart-card">
+          <h2>Encaissement par jour</h2>
+          <canvas id="chartDaily"></canvas>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>

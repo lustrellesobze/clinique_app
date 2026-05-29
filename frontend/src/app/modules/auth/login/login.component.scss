@@ -47,6 +47,55 @@
   }
 }
 
+// ─── GOOGLE (accueil) ─────────────────────────────────────────────────
+.google-accueil-block {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.google-accueil-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.google-btn-host {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.google-accueil-note {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.divider-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-light);
+  }
+
+  span {
+    flex-shrink: 0;
+  }
+}
+
 // ─── FORMULAIRE ───────────────────────────────────────────────────────
 .form-group {
   margin-bottom: 20px;
@@ -150,36 +199,6 @@
     text-decoration: none;
 
     &:hover { text-decoration: underline; }
-  }
-}
-
-.login-dev-hint {
-  margin-top: 20px;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  background: var(--bg-app, #f4f6f8);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-muted);
-
-  p {
-    margin: 0 0 8px;
-
-    &:last-child {
-      margin-bottom: 0;
-    }
-  }
-
-  code {
-    font-size: 11px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.06);
-  }
-
-  .login-dev-hint__cmd {
-    font-size: 11px;
-    opacity: 0.9;
   }
 }
 

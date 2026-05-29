@@ -32,8 +32,21 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     MTN_MOMO_API_KEY: str = ""
     ORANGE_MONEY_API_KEY: str = ""
+    CAMPAY_BASE_URL: str = "https://demo.campay.net"
+    CAMPAY_APP_USERNAME: str = ""
+    CAMPAY_APP_PASSWORD: str = ""
+    CAMPAY_PERMANENT_ACCESS_TOKEN: str = ""
+    CAMPAY_WEBHOOK_SECRET: str = ""
+    CAMPAY_PAYMENT_REDIRECT_URL: str = ""
+    CAMPAY_PAYMENT_FAILURE_REDIRECT_URL: str = ""
+    CAMPAY_ORANGE_OPERATOR_CODE: str = "orange"
+    CAMPAY_MTN_OPERATOR_CODE: str = "mtn"
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
+
+    # Connexion Google — réservée au rôle infirmière d'accueil (optionnel)
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_ACCUEIL_AUTH_ENABLED: bool = False
 
 
 settings = Settings()

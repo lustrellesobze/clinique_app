@@ -24,3 +24,12 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class GoogleAuthConfigOut(BaseModel):
+    enabled: bool
+    client_id: str = ""
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str

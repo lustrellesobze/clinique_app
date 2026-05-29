@@ -1,5 +1,7 @@
+# Fichiers nommés .env (secrets). Seul backend/.env est lu par l’API ; éviter un doublon à la racine.
+.env
+
 backend/venv/
-backend/.env
 backend/__pycache__/
 backend/**/__pycache__/
 frontend/node_modules/

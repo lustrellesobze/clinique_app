@@ -13,6 +13,11 @@ from app.models.insurance import Insurance
 from app.models.patient import Patient
 from app.models.invoice import Facture, FactureStatut
 from app.schemas.insurance import InsuranceCalculateResponse
+from app.services.insurance_details import (
+    parse_details,
+    taux_for_acte,
+    is_acte_excluded,
+)
 
 
 class InsuranceService:
@@ -63,24 +68,19 @@ class InsuranceService:
                 message="Assurance inactive ou non trouvée"
             )
         
-        # Vérifier les exclusions
-        if insurance.exclusions:
-            try:
-                exclusions = json.loads(insurance.exclusions)
-                if type_acte.lower() in [e.lower() for e in exclusions]:
-                    return InsuranceCalculateResponse(
-                        est_assure=True,
-                        taux_couverture=insurance.taux_couverture,
-                        part_assurance=Decimal("0"),
-                        part_patient=montant_total,
-                        est_exclu=True,
-                        message=f"Acte '{type_acte}' exclu de la couverture"
-                    )
-            except json.JSONDecodeError:
-                pass
-        
-        # Calculer la part assurance
-        taux = Decimal(insurance.taux_couverture) / Decimal("100")
+        details = parse_details(insurance.exclusions, insurance.taux_couverture)
+        if is_acte_excluded(details, type_acte):
+            return InsuranceCalculateResponse(
+                est_assure=True,
+                taux_couverture=0,
+                part_assurance=Decimal("0"),
+                part_patient=montant_total,
+                est_exclu=True,
+                message=f"Acte '{type_acte}' exclu de la couverture",
+            )
+
+        taux_pct = taux_for_acte(details, type_acte)
+        taux = Decimal(taux_pct) / Decimal("100")
         part_assurance = montant_total * taux
         
         # Vérifier le plafond annuel
@@ -109,7 +109,7 @@ class InsuranceService:
             if plafond_restant <= 0:
                 return InsuranceCalculateResponse(
                     est_assure=True,
-                    taux_couverture=insurance.taux_couverture,
+                    taux_couverture=taux_pct,
                     part_assurance=Decimal("0"),
                     part_patient=montant_total,
                     plafond_restant=Decimal("0"),
@@ -128,7 +128,7 @@ class InsuranceService:
         
         return InsuranceCalculateResponse(
             est_assure=True,
-            taux_couverture=insurance.taux_couverture,
+            taux_couverture=taux_pct,
             part_assurance=part_assurance,
             part_patient=part_patient,
             plafond_restant=plafond_restant,

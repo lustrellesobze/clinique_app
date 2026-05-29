@@ -13,7 +13,21 @@
       <p>Clinique Espoir</p>
     </div>
 
-    <!-- Formulaire -->
+    <!-- Google — personnel d'accueil uniquement (affiché si configuré côté serveur) -->
+    <div class="google-accueil-block" *ngIf="googleEnabled">
+      <p class="google-accueil-hint">Infirmier(ère) d'accueil</p>
+      <div #googleBtnHost class="google-btn-host"></div>
+      <p class="google-accueil-note">
+        Utilisez le compte Google dont l'adresse correspond à votre compte clinique.
+      </p>
+      <div class="divider-or"><span>ou</span></div>
+    </div>
+
+    <div class="alert-error" *ngIf="errorMessage">
+      {{ errorMessage }}
+    </div>
+
+    <!-- Formulaire classique (tous les rôles) -->
     <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
 
       <div class="form-group">
@@ -41,11 +55,6 @@
         </div>
       </div>
 
-      <!-- Message d'erreur global -->
-      <div class="alert-error" *ngIf="errorMessage">
-        {{ errorMessage }}
-      </div>
-
       <button type="submit" class="btn-login"
               [disabled]="loginForm.invalid || isLoading">
         <span *ngIf="!isLoading">Se connecter</span>
@@ -56,14 +65,6 @@
 
     <div class="login-footer">
       <a routerLink="/forgot-password">Mot de passe oublié ?</a>
-    </div>
-
-    <div class="login-dev-hint" *ngIf="devDemoHint">
-      <p>
-        Comptes démo : <code>{{ demoEmailExamples }}</code> — mot de passe commun :
-        <code>{{ demoPassword }}</code>
-      </p>
-      <p class="login-dev-hint__cmd">Backend : <code>python scripts/create_test_user.py</code></p>
     </div>
 
     <div class="login-meta">

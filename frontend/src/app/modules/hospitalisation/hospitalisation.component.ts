@@ -1,89 +1,116 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
-import { 
-  HospitalizationService, 
-  Room, 
+import { RouterLink, RouterLinkActive } from '@angular/router';
+import {
+  HospitalizationService,
+  Room,
   HospitalizationCreate,
-  HospitalizationResponse,
-  HospitalizationDischarge
+  HospitalizationAdminRow,
+  HospitalizationDashboard,
+  HospitalizationDischarge,
 } from '../../core/services/hospitalization.service';
 import { AuthService } from '../../core/auth/auth.service';
+import { ROLE_LABELS } from '../../core/models/auth.model';
+import { ADMIN_NAV_ITEMS } from '../admin/admin-nav';
 
 @Component({
   selector: 'app-hospitalisation',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive],
   templateUrl: './hospitalisation.component.html',
-  styleUrls: ['./hospitalisation.component.scss']
+  styleUrls: ['./hospitalisation.component.scss'],
 })
 export class HospitalisationComponent implements OnInit {
   readonly auth = inject(AuthService);
-  
-  // Vues
-  currentView: 'list' | 'admission' | 'discharge' = 'list';
-  
-  // Données
+  private readonly hospitalizationService = inject(HospitalizationService);
+
+  readonly navItems = ADMIN_NAV_ITEMS;
+
+  currentView: 'list' | 'admission' | 'discharge' | 'detail' = 'list';
+
+  dashboard: HospitalizationDashboard | null = null;
   rooms: Room[] = [];
-  activeHospitalizations: HospitalizationResponse[] = [];
-  selectedHospitalization: HospitalizationResponse | null = null;
-  
-  // Filtres
-  filterTypeChambre: string = '';
-  
-  // Formulaire d'admission
+  selectedHospitalization: HospitalizationAdminRow | null = null;
+  detailPatient: HospitalizationAdminRow | null = null;
+
+  filterTypeChambre = '';
+
   admissionForm = {
     patient_id: '',
     patient_search: '',
+    patient_label: '',
     room_id: '',
     medecin_id: '',
     motif_hospitalisation: '',
     acompte_verse_fcfa: 0,
-    date_admission: new Date().toISOString().slice(0, 16)
+    date_admission: new Date().toISOString().slice(0, 16),
   };
-  
-  // Formulaire de clôture
+
   dischargeForm = {
     date_sortie: new Date().toISOString().slice(0, 16),
     mode_paiement: 'especes',
-    reference_paiement: ''
+    reference_paiement: '',
   };
-  
+
   loading = false;
   error: string | null = null;
   successMessage: string | null = null;
 
-  constructor(private hospitalizationService: HospitalizationService) {}
-
-  ngOnInit(): void {
-    this.loadRooms();
-    this.loadActiveHospitalizations();
+  get isAdmin(): boolean {
+    return this.auth.getCurrentUser()?.role === 'admin';
   }
 
-  loadRooms(): void {
+  get userLabel(): string {
+    const u = this.auth.getCurrentUser();
+    return u ? `${u.prenom} ${u.nom}` : '';
+  }
+
+  get userInitials(): string {
+    const u = this.auth.getCurrentUser();
+    if (!u) return '?';
+    return `${(u.prenom || '?')[0]}${(u.nom || '?')[0]}`.toUpperCase();
+  }
+
+  get roleLabel(): string {
+    const u = this.auth.getCurrentUser();
+    return u ? ROLE_LABELS[u.role] ?? u.role : '';
+  }
+
+  get hospitalizedPatients(): HospitalizationAdminRow[] {
+    return this.dashboard?.patients ?? [];
+  }
+
+  ngOnInit(): void {
+    this.refresh();
+  }
+
+  refresh(): void {
+    this.loadDashboard();
+    this.loadRooms();
+  }
+
+  loadDashboard(): void {
     this.loading = true;
-    this.hospitalizationService.getAvailableRooms(this.filterTypeChambre || undefined).subscribe({
+    this.hospitalizationService.getDashboard().subscribe({
       next: (data) => {
-        this.rooms = data;
+        this.dashboard = data;
         this.loading = false;
       },
       error: (err) => {
-        this.error = 'Erreur lors du chargement des chambres';
+        this.error = 'Erreur lors du chargement du tableau de bord';
         this.loading = false;
         console.error(err);
-      }
+      },
     });
   }
 
-  loadActiveHospitalizations(): void {
-    this.hospitalizationService.getActiveHospitalizations().subscribe({
+  loadRooms(): void {
+    this.hospitalizationService.getAvailableRooms(this.filterTypeChambre || undefined).subscribe({
       next: (data) => {
-        this.activeHospitalizations = data;
+        this.rooms = data;
       },
-      error: (err) => {
-        console.error('Erreur lors du chargement des hospitalisations:', err);
-      }
+      error: (err) => console.error(err),
     });
   }
 
@@ -92,21 +119,20 @@ export class HospitalisationComponent implements OnInit {
   }
 
   get availableRooms(): Room[] {
-    return this.rooms.filter(r => r.est_disponible);
+    return this.rooms.filter((r) => r.est_disponible);
   }
 
   get occupiedRooms(): Room[] {
-    return this.rooms.filter(r => !r.est_disponible);
+    return this.rooms.filter((r) => !r.est_disponible);
   }
 
   selectRoom(room: Room): void {
     this.admissionForm.room_id = room.id;
-    // Calculer l'acompte minimum (50%)
     this.admissionForm.acompte_verse_fcfa = Math.ceil(room.tarif_journalier_fcfa * 0.5);
   }
 
   get selectedRoom(): Room | undefined {
-    return this.rooms.find(r => r.id === this.admissionForm.room_id);
+    return this.rooms.find((r) => r.id === this.admissionForm.room_id);
   }
 
   showAdmissionForm(): void {
@@ -117,26 +143,49 @@ export class HospitalisationComponent implements OnInit {
 
   showList(): void {
     this.currentView = 'list';
+    this.detailPatient = null;
+    this.selectedHospitalization = null;
     this.resetAdmissionForm();
-    this.loadRooms();
-    this.loadActiveHospitalizations();
+    this.refresh();
   }
 
   resetAdmissionForm(): void {
     this.admissionForm = {
       patient_id: '',
       patient_search: '',
+      patient_label: '',
       room_id: '',
       medecin_id: '',
       motif_hospitalisation: '',
       acompte_verse_fcfa: 0,
-      date_admission: new Date().toISOString().slice(0, 16)
+      date_admission: new Date().toISOString().slice(0, 16),
     };
+  }
+
+  searchPatient(): void {
+    const q = this.admissionForm.patient_search.trim();
+    if (!q) {
+      this.error = 'Saisissez un code ou un nom de patient';
+      return;
+    }
+    this.error = null;
+    this.hospitalizationService.lookupPatient(q).subscribe({
+      next: (p) => {
+        this.admissionForm.patient_id = p.id;
+        this.admissionForm.patient_label = `${p.nom} ${p.prenom} (${p.code_patient})`;
+        this.admissionForm.patient_search = p.code_patient;
+      },
+      error: () => {
+        this.error = `Aucun patient trouvé pour « ${q} »`;
+        this.admissionForm.patient_id = '';
+        this.admissionForm.patient_label = '';
+      },
+    });
   }
 
   admitPatient(): void {
     if (!this.admissionForm.patient_id || !this.admissionForm.room_id) {
-      this.error = 'Veuillez remplir tous les champs obligatoires';
+      this.error = 'Veuillez sélectionner un patient et une chambre';
       return;
     }
 
@@ -146,7 +195,7 @@ export class HospitalisationComponent implements OnInit {
       medecin_id: this.admissionForm.medecin_id || undefined,
       motif_hospitalisation: this.admissionForm.motif_hospitalisation || undefined,
       acompte_verse_fcfa: this.admissionForm.acompte_verse_fcfa,
-      date_admission: this.admissionForm.date_admission
+      date_admission: this.admissionForm.date_admission,
     };
 
     this.loading = true;
@@ -154,35 +203,42 @@ export class HospitalisationComponent implements OnInit {
 
     this.hospitalizationService.admitPatient(admissionData).subscribe({
       next: (response) => {
-        this.successMessage = `Patient ${response.patient_name} admis avec succès en chambre ${response.room_numero}`;
+        this.successMessage = `Patient ${response.patient_name} admis en chambre ${response.room_numero}`;
         this.loading = false;
         setTimeout(() => this.showList(), 2000);
       },
       error: (err) => {
-        this.error = err.error?.detail || 'Erreur lors de l\'admission du patient';
+        this.error = err.error?.detail || "Erreur lors de l'admission";
         this.loading = false;
-        console.error(err);
-      }
+      },
     });
   }
 
-  selectForDischarge(hospitalization: HospitalizationResponse): void {
-    this.selectedHospitalization = hospitalization;
+  viewPatient(row: HospitalizationAdminRow): void {
+    this.detailPatient = row;
+    this.currentView = 'detail';
+  }
+
+  selectForDischarge(row: HospitalizationAdminRow): void {
+    this.selectedHospitalization = row;
     this.currentView = 'discharge';
     this.dischargeForm.date_sortie = new Date().toISOString().slice(0, 16);
+    this.error = null;
+    this.successMessage = null;
   }
 
   get estimatedTotal(): number {
     if (!this.selectedHospitalization) return 0;
     const dateAdmission = new Date(this.selectedHospitalization.date_admission);
     const dateSortie = new Date(this.dischargeForm.date_sortie);
-    const jours = Math.ceil((dateSortie.getTime() - dateAdmission.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    return jours * this.selectedHospitalization.tarif_journalier;
+    const jours =
+      Math.ceil((dateSortie.getTime() - dateAdmission.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, jours) * this.selectedHospitalization.tarif_journalier;
   }
 
   get resteAPayer(): number {
     if (!this.selectedHospitalization) return 0;
-    return Math.max(0, this.estimatedTotal - this.selectedHospitalization.acompte_verse_fcfa);
+    return Math.max(0, this.estimatedTotal - this.selectedHospitalization.acomptes_fcfa);
   }
 
   dischargePatient(): void {
@@ -192,7 +248,7 @@ export class HospitalisationComponent implements OnInit {
       hospitalization_id: this.selectedHospitalization.id,
       date_sortie: this.dischargeForm.date_sortie,
       mode_paiement: this.dischargeForm.mode_paiement,
-      reference_paiement: this.dischargeForm.reference_paiement || undefined
+      reference_paiement: this.dischargeForm.reference_paiement || undefined,
     };
 
     this.loading = true;
@@ -200,26 +256,30 @@ export class HospitalisationComponent implements OnInit {
 
     this.hospitalizationService.dischargePatient(dischargeData).subscribe({
       next: (response) => {
-        this.successMessage = `Séjour clôturé avec succès. Facture: ${response.numero_facture}. Reste à payer: ${response.reste_a_payer} FCFA`;
+        this.successMessage = `Sortie enregistrée. Facture ${response.numero_facture}. Reste : ${response.reste_a_payer} FCFA`;
         this.loading = false;
-        setTimeout(() => this.showList(), 3000);
+        setTimeout(() => this.showList(), 2500);
       },
       error: (err) => {
-        this.error = err.error?.detail || 'Erreur lors de la clôture du séjour';
+        this.error = err.error?.detail || 'Erreur lors de la sortie';
         this.loading = false;
-        console.error(err);
-      }
+      },
     });
   }
 
-  // Fonction helper pour chercher un patient (à implémenter avec un vrai service)
-  searchPatient(): void {
-    // TODO: Implémenter la recherche de patient
-    // Pour l'instant, utiliser l'ID du patient de test
-    if (this.admissionForm.patient_search) {
-      // Simuler une recherche - en production, appeler un service
-      this.admissionForm.patient_id = this.admissionForm.patient_search;
-    }
+  soldeClass(solde: number): string {
+    if (solde >= 100000) return 'solde-high';
+    if (solde >= 30000) return 'solde-mid';
+    return 'solde-low';
+  }
+
+  roomTypeLabel(type: string): string {
+    const map: Record<string, string> = {
+      commune: 'Commune',
+      individuelle: 'Individuelle',
+      vip: 'VIP',
+    };
+    return map[type?.toLowerCase()] ?? type;
   }
 
   onLogout(event: Event): void {

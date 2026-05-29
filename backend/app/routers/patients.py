@@ -1,4 +1,9 @@
+import base64
+import io
+
+import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
@@ -11,12 +16,19 @@ from app.models.patient import Patient
 from app.models.prescription import Prescription
 from app.models.user import User, UserRole
 from app.schemas.caisse import AssignDoctorIn, PatientCaisseOut
+from app.services.consultation_info_service import get_consultation_info
 from app.schemas.medecin import ConsultationOut, PatientRecordOut, PrescriptionOut
+from app.services.patient_clinical import calc_age_years, derniere_consultation_at
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
 _role_caisse_or_admin = require_role(
     UserRole.caissier_central.value,
+    UserRole.admin.value,
+)
+_role_hospit_caisse_admin = require_role(
+    UserRole.caissier_central.value,
+    UserRole.resp_hospit.value,
     UserRole.admin.value,
 )
 _role_accueil_or_admin = require_role(
@@ -29,7 +41,8 @@ _role_medecin_or_admin = require_role(
 )
 
 
-def _patient_to_out(p: Patient) -> PatientCaisseOut:
+def _patient_to_out(p: Patient, db: Session) -> PatientCaisseOut:
+    info = get_consultation_info(db, p)
     return PatientCaisseOut(
         id=p.id,
         code_patient=p.code_patient,
@@ -42,7 +55,53 @@ def _patient_to_out(p: Patient) -> PatientCaisseOut:
         assureur=p.assureur,
         numero_police_assurance=p.numero_police_assurance,
         est_actif=p.est_actif,
+        medecin_nom=info.get("medecin_nom"),
+        batiment=info.get("batiment"),
+        type_consultation_label=info.get("type_consultation_label"),
+        motif_consultation=info.get("motif_consultation") or None,
+        montant_consultation_fcfa=info.get("montant_consultation_fcfa"),
+        remise_passage_fcfa=info.get("remise_passage_fcfa"),
     )
+
+
+@router.get("/qr/{code_patient}")
+def patient_qr_png(
+    code_patient: str,
+    _: User = Depends(_role_caisse_or_admin),
+):
+    """QR code patient (historique) pour facture imprimée."""
+    payload = f"PATIENT|{code_patient.strip().upper()}"
+    img = qrcode.make(payload)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@router.get("/lookup/{code_patient}", response_model=PatientCaisseOut)
+def lookup_patient_by_code(
+    code_patient: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(_role_hospit_caisse_admin),
+):
+    """Chargement par ID patient exact (caisse / hospitalisation)."""
+    code = code_patient.strip().upper()
+    try:
+        patient = db.scalars(
+            select(Patient).where(
+                Patient.code_patient == code,
+                Patient.est_actif.is_(True),
+            )
+        ).first()
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Aucun patient actif avec l'ID {code}",
+            )
+        return _patient_to_out(patient, db)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        raise http_exception_from_db_error(e) from e
 
 
 @router.get("", response_model=list[PatientCaisseOut])
@@ -69,7 +128,7 @@ def search_patients(
             .limit(30)
         )
         rows = db.scalars(stmt).all()
-        return [_patient_to_out(p) for p in rows]
+        return [_patient_to_out(p, db) for p in rows]
     except (OperationalError, ProgrammingError) as e:
         raise http_exception_from_db_error(e) from e
 
@@ -105,7 +164,7 @@ def assign_doctor(
         patient.medecin_id = medecin.id
         db.commit()
         db.refresh(patient)
-        return _patient_to_out(patient)
+        return _patient_to_out(patient, db)
     except HTTPException:
         db.rollback()
         raise
@@ -127,11 +186,18 @@ def patient_record(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Patient introuvable",
             )
-        if current.role.value != UserRole.admin.value and patient.medecin_id != current.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Accès dossier non autorisé pour ce médecin",
-            )
+        if current.role.value != UserRole.admin.value:
+            has_passage = db.scalars(
+                select(PassageAccueil.id).where(
+                    PassageAccueil.patient_id == patient.id,
+                    PassageAccueil.medecin_id == current.id,
+                ).limit(1)
+            ).first()
+            if patient.medecin_id != current.id and not has_passage:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Accès dossier non autorisé pour ce médecin",
+                )
 
         passages = db.scalars(
             select(PassageAccueil)
@@ -146,6 +212,7 @@ def patient_record(
             .limit(20)
         ).all()
 
+        current_passage_id = passages[0].id if passages else None
         return PatientRecordOut(
             patient_id=patient.id,
             code_patient=patient.code_patient,
@@ -153,6 +220,12 @@ def patient_record(
             prenom=patient.prenom,
             telephone=patient.telephone,
             assureur=patient.assureur,
+            date_naissance=patient.date_naissance,
+            sexe=patient.sexe.value if patient.sexe is not None else None,
+            age_ans=calc_age_years(patient.date_naissance),
+            derniere_consultation=derniere_consultation_at(
+                list(passages), exclude_passage_id=current_passage_id
+            ),
             passages=[
                 ConsultationOut(
                     passage_id=p.id,

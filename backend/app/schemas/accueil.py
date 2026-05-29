@@ -29,7 +29,8 @@ class InscriptionPatientBase(BaseModel):
     derniere_date_regles: Optional[date] = None
 
     est_assure: bool = False
-    compagnie_assurance: Optional[str] = Field(None, max_length=150)
+    assurance_id: Optional[str] = Field(None, max_length=36)
+    compagnie_assurance: Optional[str] = Field(None, max_length=200)
     date_validite_assurance: Optional[date] = None
     numero_assure: Optional[str] = Field(None, max_length=80)
 
@@ -70,9 +71,18 @@ class PassageAccueilOut(BaseModel):
         from_attributes = True
 
 
+class FactureAccueilOut(BaseModel):
+    id: str
+    numero_facture: str
+    total_fcfa: Decimal
+    medecin_nom: str | None = None
+    batiment: str | None = None
+
+
 class InscriptionPatientResponse(BaseModel):
     patient: PatientOut
     passage: PassageAccueilOut
+    facture: FactureAccueilOut | None = None
     message_transfert: str
 
 

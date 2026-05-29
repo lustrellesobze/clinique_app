@@ -40,9 +40,42 @@ def create_users(db: Session):
         {
             "email": "medecin@demo.cm",
             "password": "demo123",
-            "nom": "Kamga",
-            "prenom": "Dr Jean",
-            "role": UserRole.medecin
+            "nom": "OWONA",
+            "prenom": "Jean",
+            "service": "Médecine",
+            "role": UserRole.medecin,
+        },
+        {
+            "email": "medecin2@demo.cm",
+            "password": "demo123",
+            "nom": "NGUEMA",
+            "prenom": "Marie",
+            "service": "Médecine générale",
+            "role": UserRole.medecin,
+        },
+        {
+            "email": "medecin3@demo.cm",
+            "password": "demo123",
+            "nom": "FOTSO",
+            "prenom": "Paul",
+            "service": "Pédiatrie",
+            "role": UserRole.medecin,
+        },
+        {
+            "email": "medecin4@demo.cm",
+            "password": "demo123",
+            "nom": "MBARGA",
+            "prenom": "Eric",
+            "service": "Cardiologie",
+            "role": UserRole.medecin,
+        },
+        {
+            "email": "medecin5@demo.cm",
+            "password": "demo123",
+            "nom": "TCHOUA",
+            "prenom": "Sophie",
+            "service": "Gynécologie",
+            "role": UserRole.medecin,
         },
         {
             "email": "infirmier@demo.cm",
@@ -86,10 +119,14 @@ def create_users(db: Session):
         # Vérifier si l'utilisateur existe déjà
         existing = db.scalar(select(User).where(User.email == user_data["email"]))
         if existing:
-            print(f"  ⚠️  {user_data['email']} existe déjà")
+            existing.nom = user_data["nom"]
+            existing.prenom = user_data["prenom"]
+            if user_data.get("service") is not None:
+                existing.service = user_data.get("service")
+            print(f"  ⚠️  {user_data['email']} mis à jour")
             created_users.append(existing)
             continue
-        
+
         from app.core.security import hash_password
         user = User(
             id=str(uuid.uuid4()),
@@ -98,7 +135,8 @@ def create_users(db: Session):
             nom=user_data["nom"],
             prenom=user_data["prenom"],
             role=user_data["role"],
-            est_actif=True
+            service=user_data.get("service"),
+            est_actif=True,
         )
         db.add(user)
         created_users.append(user)

@@ -16,6 +16,14 @@ export interface DoctorPatient {
   created_at: string | null;
 }
 
+export interface DoctorLookup extends DoctorPatient {
+  date_naissance: string | null;
+  sexe: string | null;
+  age_ans: number | null;
+  derniere_consultation: string | null;
+  allergies_connues: string;
+}
+
 export interface ConsultationOut {
   passage_id: string;
   patient_id: string;
@@ -59,9 +67,23 @@ export interface PatientRecordOut {
   prenom: string;
   telephone: string | null;
   assureur: string | null;
+  date_naissance: string | null;
+  sexe: string | null;
+  age_ans: number | null;
+  derniere_consultation: string | null;
+  allergies_connues: string;
   passages: ConsultationOut[];
   prescriptions: PrescriptionOut[];
 }
+
+export type TransferDestination =
+  | 'pharmacie'
+  | 'laboratoire'
+  | 'imagerie'
+  | 'hospitalisation'
+  | 'specialiste'
+  | 'chirurgie'
+  | 'orl';
 
 @Injectable({ providedIn: 'root' })
 export class MedecinService {
@@ -71,6 +93,11 @@ export class MedecinService {
 
   listePatientsAffectes(): Observable<DoctorPatient[]> {
     return this.http.get<DoctorPatient[]>(`${this.api}/doctor/patients`);
+  }
+
+  lookupParCode(codePatient: string): Observable<DoctorLookup> {
+    const code = encodeURIComponent(codePatient.trim().toUpperCase());
+    return this.http.get<DoctorLookup>(`${this.api}/doctor/lookup/${code}`);
   }
 
   dossierPatient(patientId: string): Observable<PatientRecordOut> {
@@ -98,14 +125,7 @@ export class MedecinService {
   creerPrescription(body: {
     patient_id: string;
     passage_accueil_id?: string | null;
-    type_prescription:
-      | 'pharmacie'
-      | 'laboratoire'
-      | 'imagerie'
-      | 'hospitalisation'
-      | 'specialiste'
-      | 'chirurgie'
-      | 'orl';
+    type_prescription: TransferDestination;
     notes?: string | null;
     items: PrescriptionItemIn[];
   }): Observable<PrescriptionOut> {
@@ -114,14 +134,7 @@ export class MedecinService {
 
   transfererPrescription(
     prescriptionId: string,
-    destination:
-      | 'pharmacie'
-      | 'laboratoire'
-      | 'imagerie'
-      | 'hospitalisation'
-      | 'specialiste'
-      | 'chirurgie'
-      | 'orl',
+    destination: TransferDestination,
     commentaire: string | null
   ): Observable<PrescriptionOut> {
     return this.http.post<PrescriptionOut>(

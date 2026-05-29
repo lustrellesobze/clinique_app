@@ -1,0 +1,138 @@
+<div class="admin-layout">
+  <header class="admin-topbar">
+    <div class="topbar-brand">
+      <span class="brand-icon" aria-hidden="true">🏥</span>
+      <span class="brand-name">Clinique Espoir</span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-pill">
+        <span class="user-avatar">{{ userInitials }}</span>
+        <div class="user-text">
+          <strong>{{ userLabel }}</strong>
+          <span>{{ roleLabel }}</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="admin-body">
+    <aside class="admin-sidebar">
+      <nav class="sidebar-nav">
+        <ng-container *ngFor="let item of navItems">
+          <a
+            *ngIf="item.route && !item.soon"
+            [routerLink]="item.route"
+            routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: item.route === '/dashboard' }"
+            class="nav-item"
+          >
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </a>
+          <span *ngIf="item.soon" class="nav-item nav-item--soon" title="Bientôt disponible">
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </span>
+        </ng-container>
+      </nav>
+      <button type="button" class="nav-logout" (click)="onLogout($event)">Déconnexion</button>
+    </aside>
+
+    <main class="admin-main">
+      <header class="page-head">
+        <div>
+          <h1>Statistiques &amp; Rapports</h1>
+          <p class="subtitle" *ngIf="stats">
+            {{ stats.periode_label }} — Export disponible
+          </p>
+        </div>
+      </header>
+
+      <p class="loading" *ngIf="loading">Chargement…</p>
+      <p class="error" *ngIf="errorMsg">{{ errorMsg }}</p>
+
+      <section class="kpi-row" *ngIf="stats && !loading">
+        <article class="kpi kpi--blue">
+          <span class="kpi-title">CA ce mois (FCFA)</span>
+          <span class="kpi-value">{{ formatCaM(stats.ca_mois) }}</span>
+          <span class="kpi-trend" *ngIf="stats.ca_mois_variation_pct != null">
+            {{ stats.ca_mois_variation_pct >= 0 ? '+' : '' }}{{ stats.ca_mois_variation_pct }}%
+            vs mois précédent
+          </span>
+        </article>
+        <article class="kpi kpi--teal">
+          <span class="kpi-title">Patients ce mois</span>
+          <span class="kpi-value">{{ stats.patients_mois }}</span>
+          <span class="kpi-trend" *ngIf="stats.patients_variation_pct != null">
+            {{ stats.patients_variation_pct >= 0 ? '+' : '' }}{{ stats.patients_variation_pct }}%
+          </span>
+        </article>
+        <article class="kpi kpi--orange">
+          <span class="kpi-title">Taux de recouvrement</span>
+          <span class="kpi-value">{{ stats.taux_recouvrement }}%</span>
+        </article>
+        <article class="kpi kpi--red">
+          <span class="kpi-title">Factures émises</span>
+          <span class="kpi-value">{{ stats.factures_emises }}</span>
+        </article>
+      </section>
+
+      <section class="charts-row" *ngIf="stats && !loading">
+        <div class="card chart-box">
+          <h2>Évolution CA — 7 derniers jours</h2>
+          <canvas id="chartCa7"></canvas>
+        </div>
+        <div class="card chart-box">
+          <h2>Carte de chaleur — Services</h2>
+          <p class="chart-sub">Rentabilité par service</p>
+          <div class="heatmap">
+            <div
+              *ngFor="let s of stats.services_rentabilite; let i = index"
+              class="heat-row"
+            >
+              <span class="heat-label">{{ s.libelle }}</span>
+              <div class="heat-bar-wrap">
+                <div
+                  class="heat-bar"
+                  [style.width.%]="s.pourcentage"
+                  [style.background]="barColor(i)"
+                ></div>
+              </div>
+              <span class="heat-pct">{{ s.pourcentage }}%</span>
+              <span class="heat-amt">{{ s.montant_fcfa / 1000000 | number : '1.1-1' }} M</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card export-card" *ngIf="stats">
+        <h2>💼 Exporter les rapports</h2>
+        <div class="export-form">
+          <label>
+            <span>Période</span>
+            <select [(ngModel)]="rapportPeriode">
+              <option *ngFor="let p of periodes" [value]="p.value">{{ p.label }}</option>
+            </select>
+          </label>
+          <label>
+            <span>Date de référence</span>
+            <input type="date" [(ngModel)]="rapportDateRef" />
+          </label>
+          <button type="button" class="btn-secondary" (click)="exportPdf()">PDF</button>
+          <button type="button" class="btn-secondary" (click)="exportExcel()">Excel</button>
+        </div>
+        <div class="export-tiles">
+          <button
+            type="button"
+            class="export-tile"
+            *ngFor="let p of periodes"
+            (click)="rapportPeriode = p.value; exportPdf()"
+          >
+            <strong>{{ p.label }}</strong>
+            <span>Rapport {{ p.label.toLowerCase() }}</span>
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>

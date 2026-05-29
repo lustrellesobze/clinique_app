@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 export interface Room {
   id: string;
@@ -37,6 +38,41 @@ export interface HospitalizationResponse {
   nombre_jours: number;
 }
 
+export interface HospitalizationStats {
+  chambres_occupees: number;
+  chambres_total: number;
+  ca_hospitalisation_fcfa: number;
+  duree_moyenne_jours: number;
+  patients_hospitalises: number;
+  sejours_clotures: number;
+}
+
+export interface HospitalizationAdminRow {
+  id: string;
+  patient_id: string;
+  patient_code: string;
+  patient_name: string;
+  room_numero: string;
+  room_type: string;
+  room_label: string;
+  medecin_name?: string;
+  date_admission: string;
+  nombre_jours: number;
+  frais_chambre_fcfa: number;
+  total_facture_fcfa: number;
+  acomptes_fcfa: number;
+  solde_fcfa: number;
+  motif_hospitalisation?: string;
+  tarif_journalier: number;
+  statut: string;
+}
+
+export interface HospitalizationDashboard {
+  stats: HospitalizationStats;
+  patients: HospitalizationAdminRow[];
+  rooms_available: number;
+}
+
 export interface HospitalizationDischarge {
   hospitalization_id: string;
   date_sortie: string;
@@ -54,13 +90,24 @@ export interface HospitalizationDischargeResponse {
   reste_a_payer: number;
 }
 
+export interface PatientLookupMini {
+  id: string;
+  code_patient: string;
+  nom: string;
+  prenom: string;
+}
+
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class HospitalizationService {
-  private apiUrl = '/api/hospitalization';
+  private readonly apiUrl = `${environment.apiUrl.replace(/\/+$/, '')}/api/hospitalization`;
 
   constructor(private http: HttpClient) {}
+
+  getDashboard(): Observable<HospitalizationDashboard> {
+    return this.http.get<HospitalizationDashboard>(`${this.apiUrl}/dashboard`);
+  }
 
   getAvailableRooms(typeChambre?: string): Observable<Room[]> {
     let params = new HttpParams();
@@ -80,5 +127,10 @@ export class HospitalizationService {
 
   dischargePatient(data: HospitalizationDischarge): Observable<HospitalizationDischargeResponse> {
     return this.http.post<HospitalizationDischargeResponse>(`${this.apiUrl}/discharge`, data);
+  }
+
+  lookupPatient(code: string): Observable<PatientLookupMini> {
+    const api = `${environment.apiUrl.replace(/\/+$/, '')}/api/patients/lookup/${encodeURIComponent(code.trim().toUpperCase())}`;
+    return this.http.get<PatientLookupMini>(api);
   }
 }

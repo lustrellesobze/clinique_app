@@ -10,6 +10,12 @@ export interface LoginResponse {
   user: UserInfo;
 }
 
+/** Config publique pour le bouton Google (accueil). */
+export interface GoogleAuthConfig {
+  enabled: boolean;
+  client_id: string;
+}
+
 export interface UserInfo {
   id: string;
   nom: string;
@@ -42,7 +48,7 @@ export const ROLE_ROUTES: Record<UserRole, string> = {
   comptable: '/assurances',
   resp_hospit: '/hospitalisation',
   gestionnaire_assurance: '/assurances',
-  admin: '/admin',
+  admin: '/dashboard',
 };
 
 // Labels lisibles pour afficher le rôle dans l'UI

@@ -8,17 +8,33 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, get_current_user
-from app.models import Hospitalization, Room, Patient, User, Facture, LigneFacture
+from app.core.dependencies import get_current_user, get_db
+from app.models import Facture, Hospitalization, LigneFacture, Patient, Room, User
+from app.models.invoice import FactureStatut
+from app.models.user import UserRole
 from app.schemas.hospitalization import (
-    RoomResponse,
     HospitalizationCreate,
-    HospitalizationResponse,
+    HospitalizationDashboardOut,
     HospitalizationDischarge,
-    HospitalizationDischargeResponse
+    HospitalizationDischargeResponse,
+    HospitalizationResponse,
+    RoomResponse,
 )
+from app.services.hospitalization_dashboard import build_hospitalization_dashboard
 
 router = APIRouter(prefix="/hospitalization", tags=["hospitalization"])
+
+
+def _hospit_role(user: User) -> str:
+    return user.role.value if hasattr(user.role, "value") else str(user.role)
+
+
+def _require_hospit_access(user: User) -> None:
+    if _hospit_role(user) not in (
+        UserRole.resp_hospit.value,
+        UserRole.admin.value,
+    ):
+        raise HTTPException(status_code=403, detail="Accès non autorisé")
 
 
 @router.get("/rooms", response_model=List[RoomResponse])
@@ -30,10 +46,8 @@ async def get_available_rooms(
     """
     Récupère la liste des chambres disponibles
     """
-    # Vérifier les permissions
-    if current_user.role not in ["resp_hospit", "admin"]:
-        raise HTTPException(status_code=403, detail="Accès non autorisé")
-    
+    _require_hospit_access(current_user)
+
     # Construire la requête
     query = db.query(Room)
     
@@ -54,10 +68,8 @@ async def admit_patient(
     """
     Admet un patient en hospitalisation
     """
-    # Vérifier les permissions
-    if current_user.role not in ["resp_hospit", "admin"]:
-        raise HTTPException(status_code=403, detail="Accès non autorisé")
-    
+    _require_hospit_access(current_user)
+
     # Vérifier que la chambre existe et est disponible
     room = db.query(Room).filter(Room.id == admission_data.room_id).first()
     if not room:
@@ -131,10 +143,8 @@ async def get_active_hospitalizations(
     """
     Récupère la liste des hospitalisations en cours
     """
-    # Vérifier les permissions
-    if current_user.role not in ["resp_hospit", "admin"]:
-        raise HTTPException(status_code=403, detail="Accès non autorisé")
-    
+    _require_hospit_access(current_user)
+
     hospitalizations = db.query(Hospitalization).filter(
         Hospitalization.statut == "en_cours"
     ).order_by(Hospitalization.date_admission.desc()).all()
@@ -173,6 +183,17 @@ async def get_active_hospitalizations(
     return result
 
 
+@router.get("/dashboard", response_model=HospitalizationDashboardOut)
+async def get_hospitalization_dashboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Vue admin : indicateurs + patients hospitalisés (transférés / admis)."""
+    _require_hospit_access(current_user)
+    data = build_hospitalization_dashboard(db)
+    return data
+
+
 @router.post("/discharge", response_model=HospitalizationDischargeResponse)
 async def discharge_patient(
     discharge_data: HospitalizationDischarge,
@@ -182,10 +203,8 @@ async def discharge_patient(
     """
     Clôture une hospitalisation et génère la facture finale
     """
-    # Vérifier les permissions
-    if current_user.role not in ["resp_hospit", "admin"]:
-        raise HTTPException(status_code=403, detail="Accès non autorisé")
-    
+    _require_hospit_access(current_user)
+
     # Récupérer l'hospitalisation
     hospitalization = db.query(Hospitalization).filter(
         Hospitalization.id == discharge_data.hospitalization_id
@@ -217,27 +236,37 @@ async def discharge_patient(
     ).count()
     numero_facture = f"FACT-HOSPIT-{year}-{count + 1:05d}"
     
-    # Créer la facture
+    acompte = float(hospitalization.acompte_verse_fcfa or 0)
+    montant_float = float(montant_total)
+    reste = max(0.0, montant_float - acompte)
+    statut_facture = (
+        FactureStatut.payee
+        if reste <= 0 and discharge_data.mode_paiement
+        else FactureStatut.en_attente
+    )
+
     facture = Facture(
         numero_facture=numero_facture,
         patient_id=hospitalization.patient_id,
-        montant_total_fcfa=montant_total,
-        remise_fcfa=0,
-        part_assurance_fcfa=0,
-        part_patient_fcfa=montant_total - hospitalization.acompte_verse_fcfa,
-        statut="payee" if discharge_data.mode_paiement else "en_attente",
-        type_facture="hospitalisation"
+        montant_total=montant_float,
+        montant_regle=min(acompte, montant_float),
+        statut=statut_facture,
+        commentaire=(
+            f"Hospitalisation — Chambre {room.numero} ({room.type_chambre}), "
+            f"{nombre_jours} jour(s)"
+        ),
     )
     db.add(facture)
     db.flush()
-    
-    # Ajouter les lignes de facture
+
     ligne = LigneFacture(
         facture_id=facture.id,
+        ordre=1,
         designation=f"Hospitalisation - Chambre {room.numero} ({room.type_chambre})",
-        quantite=nombre_jours,
-        prix_unitaire_fcfa=room.tarif_journalier_fcfa,
-        montant_total_fcfa=montant_total
+        quantite=float(nombre_jours),
+        prix_unitaire=float(room.tarif_journalier_fcfa),
+        remise_montant=0,
+        montant_ligne=montant_float,
     )
     db.add(ligne)
     

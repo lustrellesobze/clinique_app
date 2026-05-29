@@ -1,0 +1,244 @@
+@import '../admin/admin-layout.scss';
+
+.page-head {
+  margin-bottom: 20px;
+
+  h1 {
+    margin: 0;
+    font-size: 1.6rem;
+    color: #0f172a;
+  }
+
+  .subtitle {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 0.95rem;
+  }
+}
+
+.search-input {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  min-width: 220px;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.75);
+  }
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-bottom: 20px;
+}
+
+.filters-card {
+  padding: 20px 24px;
+
+  h2 {
+    margin: 0 0 16px;
+    font-size: 1rem;
+    color: #334155;
+  }
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    span {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #475569;
+    }
+
+    input,
+    select {
+      padding: 10px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+    }
+  }
+}
+
+.filter-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-primary {
+  background: #1d4ed8;
+  color: #fff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.journal-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.journal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid #f1f5f9;
+
+  h2 {
+    margin: 0;
+    font-size: 1rem;
+    color: #0f172a;
+  }
+
+  .count {
+    color: #64748b;
+    font-size: 0.9rem;
+  }
+}
+
+.log-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.log-entry {
+  display: grid;
+  grid-template-columns: 90px 110px 1fr auto;
+  gap: 16px;
+  align-items: start;
+  padding: 16px 24px;
+  border-bottom: 1px solid #f1f5f9;
+
+  &:last-child {
+    border-bottom: 0;
+  }
+}
+
+.log-time {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.log-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+}
+
+.cat-facture {
+  background: #2563eb;
+}
+
+.cat-paiement {
+  background: #16a34a;
+}
+
+.cat-patient {
+  background: #1e40af;
+}
+
+.cat-prescription {
+  background: #ea580c;
+}
+
+.cat-annulation {
+  background: #dc2626;
+}
+
+.cat-systeme {
+  background: #475569;
+}
+
+.log-title {
+  display: block;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.log-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.log-pill {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill-facture {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.pill-paiement {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pill-patient {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.pill-prescription {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.pill-annulation {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pill-systeme {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.empty,
+.loading,
+.error {
+  padding: 24px;
+  text-align: center;
+  color: #64748b;
+}
+
+.error {
+  color: #dc2626;
+}
+
+@media (max-width: 900px) {
+  .log-entry {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}

@@ -1,12 +1,9 @@
 import secrets
-from io import BytesIO
 from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session, selectinload
@@ -15,15 +12,24 @@ from app.core.db_errors import http_exception_from_db_error
 from app.core.dependencies import require_role
 from app.database import get_db
 from app.models.invoice import Facture, FactureStatut, LigneFacture
-from app.models.passage_accueil import PassageAccueil
 from app.models.patient import Patient
+from app.models.payment import Paiement
 from app.models.user import User, UserRole
 from app.schemas.caisse import (
     CreateConsultationInvoiceIn,
     InvoiceLineOut,
     InvoiceOut,
     PatientCaisseOut,
+    PaymentOut,
 )
+from app.services.consultation_info_service import (
+    creer_facture_consultation_depuis_passage,
+    get_consultation_info,
+    get_dernier_passage_actif,
+    get_facture_consultation_en_attente,
+    get_facture_consultation_pour_caisse,
+)
+from app.services.pdf_service import PDFService
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -41,7 +47,8 @@ def _to_decimal(v: object, default: str = "0") -> Decimal:
     return Decimal(str(v))
 
 
-def _patient_to_out(p: Patient) -> PatientCaisseOut:
+def _patient_to_out(p: Patient, db: Session) -> PatientCaisseOut:
+    info = get_consultation_info(db, p)
     return PatientCaisseOut(
         id=p.id,
         code_patient=p.code_patient,
@@ -54,10 +61,53 @@ def _patient_to_out(p: Patient) -> PatientCaisseOut:
         assureur=p.assureur,
         numero_police_assurance=p.numero_police_assurance,
         est_actif=p.est_actif,
+        medecin_nom=info.get("medecin_nom"),
+        batiment=info.get("batiment"),
+        type_consultation_label=info.get("type_consultation_label"),
+        motif_consultation=info.get("motif_consultation") or None,
+        montant_consultation_fcfa=info.get("montant_consultation_fcfa"),
+        remise_passage_fcfa=info.get("remise_passage_fcfa"),
     )
 
 
-def _invoice_to_out(inv: Facture, patient: Patient | None = None) -> InvoiceOut:
+def _payment_to_out(p: Paiement) -> PaymentOut:
+    return PaymentOut(
+        id=p.id,
+        facture_id=p.facture_id,
+        caissier_id=p.caissier_id,
+        montant=_to_decimal(p.montant),
+        mode_paiement=(
+            p.mode_paiement.value
+            if hasattr(p.mode_paiement, "value")
+            else str(p.mode_paiement)
+        ),
+        statut=p.statut.value if hasattr(p.statut, "value") else str(p.statut),
+        reference_transaction=p.reference_transaction,
+        commentaire=p.commentaire,
+        created_at=p.created_at,
+    )
+
+
+def _load_paiements_map(db: Session, facture_ids: list[str]) -> dict[str, list[Paiement]]:
+    if not facture_ids:
+        return {}
+    rows = db.scalars(
+        select(Paiement)
+        .where(Paiement.facture_id.in_(facture_ids))
+        .order_by(Paiement.created_at.asc())
+    ).all()
+    out: dict[str, list[Paiement]] = {}
+    for p in rows:
+        out.setdefault(p.facture_id, []).append(p)
+    return out
+
+
+def _invoice_to_out(
+    inv: Facture,
+    patient: Patient | None = None,
+    db: Session | None = None,
+    paiements: list[Paiement] | None = None,
+) -> InvoiceOut:
     total = _to_decimal(inv.montant_total)
     regle = _to_decimal(inv.montant_regle)
     lines = [
@@ -72,6 +122,9 @@ def _invoice_to_out(inv: Facture, patient: Patient | None = None) -> InvoiceOut:
         )
         for l in inv.lignes
     ]
+    info: dict = {}
+    if patient and db is not None:
+        info = get_consultation_info(db, patient)
     return InvoiceOut(
         id=inv.id,
         numero_facture=inv.numero_facture,
@@ -90,7 +143,12 @@ def _invoice_to_out(inv: Facture, patient: Patient | None = None) -> InvoiceOut:
         commentaire=inv.commentaire,
         created_at=inv.created_at,
         lignes=lines,
-        patient=_patient_to_out(patient) if patient else None,
+        patient=_patient_to_out(patient, db) if patient and db is not None else None,
+        medecin_nom=info.get("medecin_nom"),
+        batiment=info.get("batiment"),
+        type_consultation_label=info.get("type_consultation_label"),
+        code_patient=patient.code_patient if patient else None,
+        paiements=[_payment_to_out(p) for p in (paiements or [])],
     )
 
 
@@ -141,15 +199,10 @@ def create_consultation_invoice(
                 detail="Patient introuvable",
             )
 
-        # Par défaut, on reprend la consultation saisie à l'accueil.
+        # Par défaut : facture déjà créée à l'accueil ou générée depuis le passage.
         lines_in = body.lignes
         if not lines_in:
-            passage = db.scalars(
-                select(PassageAccueil)
-                .where(PassageAccueil.patient_id == patient.id)
-                .order_by(PassageAccueil.created_at.desc())
-                .limit(1)
-            ).first()
+            passage = get_dernier_passage_actif(db, patient.id)
             if not passage:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -158,14 +211,33 @@ def create_consultation_invoice(
                         "Renseignez des lignes manuelles."
                     ),
                 )
-            lines_in = [
-                {
-                    "designation": "Consultation",
-                    "quantite": Decimal("1"),
-                    "prix_unitaire": _to_decimal(passage.montant_consultation_fcfa),
-                    "remise_montant": _to_decimal(passage.remise_fcfa),
-                }
-            ]
+            inv_existing = creer_facture_consultation_depuis_passage(
+                db,
+                patient,
+                passage,
+                caissier_id=current.id,
+                commentaire=body.commentaire,
+            )
+            db.commit()
+            inv = db.scalars(
+                select(Facture)
+                .where(Facture.id == inv_existing.id)
+                .options(selectinload(Facture.lignes))
+            ).first()
+            assert inv is not None
+            pay_map = _load_paiements_map(db, [inv.id])
+            return _invoice_to_out(inv, patient, db, pay_map.get(inv.id, []))
+
+        existing_pending = get_facture_consultation_en_attente(db, patient.id)
+        if existing_pending:
+            inv = db.scalars(
+                select(Facture)
+                .where(Facture.id == existing_pending.id)
+                .options(selectinload(Facture.lignes))
+            ).first()
+            assert inv is not None
+            pay_map = _load_paiements_map(db, [inv.id])
+            return _invoice_to_out(inv, patient, db, pay_map.get(inv.id, []))
 
         facture = Facture(
             numero_facture=_generer_numero_facture(db),
@@ -217,6 +289,16 @@ def create_consultation_invoice(
         facture.part_patient = float(total)
         facture.montant_regle = 0
         facture.statut = FactureStatut.en_attente if total > 0 else FactureStatut.payee
+        info = get_consultation_info(db, patient)
+        if info.get("medecin_nom"):
+            note = (
+                f"Consultation — {info['medecin_nom']} — {info.get('batiment') or ''}"
+            )
+            facture.commentaire = (
+                f"{body.commentaire.strip()} | {note}"
+                if body.commentaire
+                else note
+            )
         db.commit()
 
         inv = db.scalars(
@@ -225,12 +307,43 @@ def create_consultation_invoice(
             .options(selectinload(Facture.lignes))
         ).first()
         assert inv is not None
-        return _invoice_to_out(inv, patient)
+        pay_map = _load_paiements_map(db, [inv.id])
+        return _invoice_to_out(inv, patient, db, pay_map.get(inv.id, []))
     except HTTPException:
         db.rollback()
         raise
     except (OperationalError, ProgrammingError) as e:
         db.rollback()
+        raise http_exception_from_db_error(e) from e
+
+
+@router.get("/consultation-active", response_model=InvoiceOut)
+def get_consultation_active_invoice(
+    patient_id: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    _: User = Depends(_role_caisse_or_admin),
+):
+    """Facture consultation unique pour la caisse (en attente prioritaire)."""
+    try:
+        inv = get_facture_consultation_pour_caisse(db, patient_id)
+        if not inv:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Aucune facture de consultation pour ce patient",
+            )
+        inv = db.scalars(
+            select(Facture)
+            .where(Facture.id == inv.id)
+            .options(selectinload(Facture.lignes))
+        ).first()
+        if not inv:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Facture introuvable")
+        patient = db.get(Patient, patient_id)
+        pay_map = _load_paiements_map(db, [inv.id])
+        return _invoice_to_out(inv, patient, db, pay_map.get(inv.id, []))
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as e:
         raise http_exception_from_db_error(e) from e
 
 
@@ -262,7 +375,16 @@ def list_invoices(
             if patient_ids:
                 pats = db.scalars(select(Patient).where(Patient.id.in_(patient_ids))).all()
                 patient_map = {p.id: p for p in pats}
-        return [_invoice_to_out(i, patient_map.get(i.patient_id)) for i in rows]
+        pay_map = _load_paiements_map(db, [i.id for i in rows])
+        return [
+            _invoice_to_out(
+                i,
+                patient_map.get(i.patient_id),
+                db,
+                pay_map.get(i.id, []),
+            )
+            for i in rows
+        ]
     except (OperationalError, ProgrammingError) as e:
         raise http_exception_from_db_error(e) from e
 
@@ -282,71 +404,40 @@ def export_invoice_pdf(
         if not inv:
             raise HTTPException(status_code=404, detail="Facture introuvable")
         patient = db.scalars(select(Patient).where(Patient.id == inv.patient_id)).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient introuvable")
 
-        buf = BytesIO()
-        c = canvas.Canvas(buf, pagesize=A4)
-        width, height = A4
-        y = height - 40
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(40, y, "Clinique Espoir — Facture")
-        y -= 26
-        c.setFont("Helvetica", 10)
-        c.drawString(40, y, f"Numero: {inv.numero_facture}")
-        y -= 16
-        c.drawString(
-            40,
-            y,
-            f"Patient: {(patient.nom + ' ' + patient.prenom) if patient else inv.patient_id}",
-        )
-        y -= 16
-        c.drawString(
-            40,
-            y,
-            f"Date: {inv.created_at.strftime('%d/%m/%Y %H:%M') if inv.created_at else '-'}",
-        )
-        y -= 24
+        info = get_consultation_info(db, patient)
+        paiements = db.scalars(
+            select(Paiement)
+            .where(Paiement.facture_id == inv.id)
+            .order_by(Paiement.created_at.asc())
+        ).all()
 
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(40, y, "Ligne")
-        c.drawString(260, y, "Qte")
-        c.drawString(320, y, "PU")
-        c.drawString(390, y, "Remise")
-        c.drawString(470, y, "Total")
-        y -= 12
-        c.line(40, y, width - 40, y)
-        y -= 16
-        c.setFont("Helvetica", 10)
-        for line in inv.lignes:
-            c.drawString(40, y, line.designation[:34])
-            c.drawRightString(300, y, f"{_to_decimal(line.quantite)}")
-            c.drawRightString(370, y, f"{_to_decimal(line.prix_unitaire)}")
-            c.drawRightString(450, y, f"{_to_decimal(line.remise_montant)}")
-            c.drawRightString(540, y, f"{_to_decimal(line.montant_ligne)}")
-            y -= 16
-            if y < 120:
-                c.showPage()
-                y = height - 50
+        insurance = None
+        if patient.assureur:
+            from app.models.insurance import Insurance
 
-        y -= 8
-        c.line(360, y, width - 40, y)
-        y -= 18
-        c.setFont("Helvetica-Bold", 11)
-        c.drawRightString(540, y, f"Sous-total: {_to_decimal(inv.montant_total) + _to_decimal(inv.remise_globale)} FCFA")
-        y -= 16
-        c.drawRightString(540, y, f"Remise: {_to_decimal(inv.remise_globale)} FCFA")
-        y -= 16
-        c.drawRightString(540, y, f"Total: {_to_decimal(inv.montant_total)} FCFA")
-        y -= 16
-        c.drawRightString(540, y, f"Regle: {_to_decimal(inv.montant_regle)} FCFA")
-        y -= 16
-        c.drawRightString(
-            540,
-            y,
-            f"Reste: {max(Decimal('0'), _to_decimal(inv.montant_total) - _to_decimal(inv.montant_regle))} FCFA",
+            insurance = db.scalars(
+                select(Insurance).where(Insurance.nom_compagnie == patient.assureur)
+            ).first()
+
+        caissier_nom = None
+        if inv.caissier_id:
+            caissier = db.scalars(
+                select(User).where(User.id == inv.caissier_id)
+            ).first()
+            if caissier:
+                caissier_nom = f"{caissier.prenom} {caissier.nom}".strip()
+
+        buf = PDFService.generate_invoice_pdf(
+            inv,
+            patient,
+            insurance,
+            consultation_info=info,
+            paiements=list(paiements),
+            caissier_nom=caissier_nom,
         )
-        c.showPage()
-        c.save()
-        buf.seek(0)
         filename = f"{inv.numero_facture}.pdf"
         return StreamingResponse(
             buf,

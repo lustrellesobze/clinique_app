@@ -11,6 +11,12 @@ export interface PatientCaisse {
   telephone: string | null;
   medecin_id: string | null;
   assureur: string | null;
+  medecin_nom?: string | null;
+  batiment?: string | null;
+  type_consultation_label?: string | null;
+  motif_consultation?: string | null;
+  montant_consultation_fcfa?: number | null;
+  remise_passage_fcfa?: number | null;
 }
 
 export interface LigneFactureIn {
@@ -36,10 +42,24 @@ export interface FactureOut {
   montant_regle: number;
   restant_a_payer: number;
   devise: string;
+  commentaire?: string | null;
   created_at: string | null;
   lignes: LigneFactureOut[];
   patient: PatientCaisse | null;
+  medecin_nom?: string | null;
+  batiment?: string | null;
+  type_consultation_label?: string | null;
+  code_patient?: string | null;
+  paiements?: PaiementOut[];
 }
+
+export const MODE_PAIEMENT_LABELS: Record<string, string> = {
+  especes: 'Espèces (Cash)',
+  mtn_momo: 'MTN MoMo',
+  orange_money: 'Orange Money',
+  carte: 'Carte bancaire',
+  assurance: 'Assurance',
+};
 
 export interface PaiementOut {
   id: string;
@@ -57,6 +77,9 @@ export interface MobilePaymentInitOut {
   qr_png_base64: string;
   qr_payload: string;
   instructions: string[];
+  campay_active?: boolean;
+  telephone?: string | null;
+  payment_link?: string | null;
 }
 
 export interface PaymentStatusOut {
@@ -78,6 +101,21 @@ export class CaisseService {
     return this.http.get<PatientCaisse[]>(`${this.api}/patients`, { params });
   }
 
+  /** Chargement par ID exact (recommandé à la caisse). */
+  chargerPatientParCode(code: string): Observable<PatientCaisse> {
+    const codeNorm = encodeURIComponent(code.trim().toUpperCase());
+    return this.http.get<PatientCaisse>(
+      `${this.api}/patients/lookup/${codeNorm}`
+    );
+  }
+
+  chargerQrPatient(code: string) {
+    const codeNorm = encodeURIComponent(code.trim().toUpperCase());
+    return this.http.get(`${this.api}/patients/qr/${codeNorm}`, {
+      responseType: 'blob',
+    });
+  }
+
   creerFactureConsultation(
     patientId: string,
     commentaire: string,
@@ -90,9 +128,12 @@ export class CaisseService {
     });
   }
 
-  listerFacturesPatient(patientId: string): Observable<FactureOut[]> {
+  /** Facture consultation unique à afficher à la caisse. */
+  getFactureConsultationActive(patientId: string): Observable<FactureOut> {
     const params = new HttpParams().set('patient_id', patientId);
-    return this.http.get<FactureOut[]>(`${this.api}/invoices`, { params });
+    return this.http.get<FactureOut>(`${this.api}/invoices/consultation-active`, {
+      params,
+    });
   }
 
   encaisser(
@@ -123,7 +164,8 @@ export class CaisseService {
     factureId: string,
     provider: 'orange_money' | 'mtn_momo',
     montant: number,
-    referenceTransaction: string | null
+    referenceTransaction: string | null,
+    telephone: string | null
   ): Observable<MobilePaymentInitOut> {
     return this.http.post<MobilePaymentInitOut>(
       `${this.api}/payments/mobile/initiate`,
@@ -132,6 +174,7 @@ export class CaisseService {
         provider,
         montant,
         reference_transaction: referenceTransaction || null,
+        telephone: telephone?.trim() || null,
       }
     );
   }
@@ -151,6 +194,12 @@ export class CaisseService {
 
   getInvoicePdfUrl(invoiceId: string): string {
     return `${this.api}/invoices/${invoiceId}/pdf`;
+  }
+
+  telechargerFacturePdf(factureId: string) {
+    return this.http.get(`${this.api}/invoices/${factureId}/pdf`, {
+      responseType: 'blob',
+    });
   }
 
   getCaisseWebSocketUrl(): string {

@@ -1,0 +1,116 @@
+<div class="admin-layout">
+  <header class="admin-topbar">
+    <div class="topbar-brand">
+      <span class="brand-icon" aria-hidden="true">🏥</span>
+      <span class="brand-name">Clinique Espoir</span>
+    </div>
+    <div class="topbar-right">
+      <input
+        type="search"
+        class="search-input"
+        [(ngModel)]="filterRecherche"
+        (keyup.enter)="load()"
+        placeholder="Rechercher patient, facture…"
+      />
+      <div class="user-pill">
+        <span class="user-avatar">{{ userInitials }}</span>
+        <div class="user-text">
+          <strong>{{ userLabel }}</strong>
+          <span>{{ roleLabel }}</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="admin-body">
+    <aside class="admin-sidebar">
+      <nav class="sidebar-nav">
+        <ng-container *ngFor="let item of navItems">
+          <a
+            *ngIf="item.route && !item.soon"
+            [routerLink]="item.route"
+            routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: item.route === '/dashboard' }"
+            class="nav-item"
+          >
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </a>
+          <span *ngIf="item.soon" class="nav-item nav-item--soon" title="Bientôt disponible">
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </span>
+        </ng-container>
+      </nav>
+      <button type="button" class="nav-logout" (click)="onLogout($event)">Déconnexion</button>
+    </aside>
+
+    <main class="admin-main">
+      <header class="page-head">
+        <div>
+          <h1>Audit Log</h1>
+          <p class="subtitle">Journal des opérations — Accès Administrateur</p>
+        </div>
+      </header>
+
+      <div class="card filters-card">
+        <h2>🔍 Filtres Audit Log</h2>
+        <div class="filters-grid">
+          <label>
+            <span>Utilisateur</span>
+            <select [(ngModel)]="filterUser">
+              <option value="">Tous les utilisateurs</option>
+              <option *ngFor="let u of users" [value]="u.id">
+                {{ u.prenom }} {{ u.nom }} ({{ u.role }})
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>Type d'action</span>
+            <select [(ngModel)]="filterCategorie">
+              <option *ngFor="let c of categories" [value]="c.value">{{ c.label }}</option>
+            </select>
+          </label>
+          <label>
+            <span>Date début</span>
+            <input type="date" [(ngModel)]="filterDateDebut" />
+          </label>
+          <label>
+            <span>Date fin</span>
+            <input type="date" [(ngModel)]="filterDateFin" />
+          </label>
+        </div>
+        <div class="filter-actions">
+          <button type="button" class="btn-primary" (click)="load()" [disabled]="loading">
+            Filtrer
+          </button>
+        </div>
+      </div>
+
+      <p class="error" *ngIf="errorMsg">{{ errorMsg }}</p>
+      <p class="loading" *ngIf="loading">Chargement…</p>
+
+      <div class="card journal-card" *ngIf="data && !loading">
+        <div class="journal-head">
+          <h2>📋 Journal des opérations — {{ journalDateLabel }}</h2>
+          <span class="count">• {{ data.total }} entrées</span>
+        </div>
+
+        <div class="log-list" *ngIf="data.entries.length; else empty">
+          <article *ngFor="let e of data.entries" class="log-entry">
+            <time class="log-time">{{ formatTime(e.created_at) }}</time>
+            <span class="log-badge" [ngClass]="catClass(e)">{{ e.categorie }}</span>
+            <div class="log-body">
+              <strong class="log-title">{{ e.titre }}</strong>
+              <p class="log-meta">{{ e.details_ligne }}</p>
+            </div>
+            <span class="log-pill" [ngClass]="statutClass(e)">• {{ e.statut_label }}</span>
+          </article>
+        </div>
+        <ng-template #empty>
+          <p class="empty">Aucune entrée pour cette période.</p>
+        </ng-template>
+      </div>
+    </main>
+  </div>
+</div>

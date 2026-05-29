@@ -19,7 +19,9 @@ export class JwtInterceptor implements HttpInterceptor {
   ): Observable<HttpEvent<unknown>> {
     const token = this.authService.getToken();
     const skipAuthHeader =
-      req.url.includes('/auth/login') || req.url.includes('/auth/refresh');
+      req.url.includes('/auth/login') ||
+      req.url.includes('/auth/refresh') ||
+      req.url.includes('/auth/google');
 
     if (token && !skipAuthHeader) {
       req = req.clone({
@@ -37,7 +39,8 @@ export class JwtInterceptor implements HttpInterceptor {
         if (
           error.status === 401 &&
           !req.url.includes('/auth/login') &&
-          !req.url.includes('/auth/refresh')
+          !req.url.includes('/auth/refresh') &&
+          !req.url.includes('/auth/google')
         ) {
           const refreshTok = this.authService.getRefreshToken();
           if (!refreshTok) {

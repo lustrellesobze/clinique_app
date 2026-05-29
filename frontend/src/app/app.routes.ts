@@ -95,6 +95,29 @@ export const routes: Routes = [
     data: { roles: ['resp_hospit', 'admin'] },
   },
   {
+    path: 'rapports',
+    loadComponent: () =>
+      import('./modules/rapports/rapports.component').then((m) => m.RapportsComponent),
+    canActivate: [AuthGuard],
+    data: { roles: ['admin', 'comptable'] },
+  },
+  {
+    path: 'audit',
+    loadComponent: () =>
+      import('./modules/audit-log/audit-log.component').then((m) => m.AuditLogComponent),
+    canActivate: [AuthGuard],
+    data: { roles: ['admin'] },
+  },
+  {
+    path: 'facturation',
+    loadComponent: () =>
+      import('./modules/facturation/facturation.component').then(
+        (m) => m.FacturationComponent
+      ),
+    canActivate: [AuthGuard],
+    data: { roles: ['admin', 'comptable'] },
+  },
+  {
     path: 'assurances',
     loadComponent: () =>
       import('./modules/assurances/assurances.component').then(
@@ -104,6 +127,9 @@ export const routes: Routes = [
     data: { roles: ['gestionnaire_assurance', 'comptable', 'admin'] },
   },
 
-  // Redirection
+  // Alias admin (évite retour au splash via wildcard)
+  { path: 'admin', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  // Routes inconnues → splash (accueil)
   { path: '**', redirectTo: '' },
 ];

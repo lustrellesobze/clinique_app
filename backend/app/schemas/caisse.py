@@ -4,6 +4,14 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ConsultationRoutingOut(BaseModel):
+    medecin_id: str | None = None
+    medecin_nom: str | None = None
+    batiment: str | None = None
+    type_consultation: str | None = None
+    type_consultation_label: str | None = None
+
+
 class PatientCaisseOut(BaseModel):
     id: str
     code_patient: str
@@ -16,6 +24,12 @@ class PatientCaisseOut(BaseModel):
     assureur: str | None = None
     numero_police_assurance: str | None = None
     est_actif: bool
+    medecin_nom: str | None = None
+    batiment: str | None = None
+    type_consultation_label: str | None = None
+    motif_consultation: str | None = None
+    montant_consultation_fcfa: float | None = None
+    remise_passage_fcfa: float | None = None
 
 
 class AssignDoctorIn(BaseModel):
@@ -64,6 +78,11 @@ class InvoiceOut(BaseModel):
     created_at: datetime | None = None
     lignes: list[InvoiceLineOut] = Field(default_factory=list)
     patient: PatientCaisseOut | None = None
+    medecin_nom: str | None = None
+    batiment: str | None = None
+    type_consultation_label: str | None = None
+    code_patient: str | None = None
+    paiements: list["PaymentOut"] = Field(default_factory=list)
 
 
 class PaymentCreateIn(BaseModel):
@@ -80,14 +99,18 @@ class MobilePaymentInitIn(BaseModel):
     facture_id: str
     provider: str = Field(pattern="^(orange_money|mtn_momo)$")
     montant: Decimal = Field(gt=0)
+    telephone: str | None = Field(default=None, min_length=8, max_length=20)
     reference_transaction: str | None = None
 
 
 class MobilePaymentInitOut(BaseModel):
     payment: "PaymentOut"
-    qr_png_base64: str
-    qr_payload: str
+    qr_png_base64: str = ""
+    qr_payload: str = ""
     instructions: list[str]
+    campay_active: bool = False
+    telephone: str | None = None
+    payment_link: str | None = None
 
 
 class PaymentOut(BaseModel):

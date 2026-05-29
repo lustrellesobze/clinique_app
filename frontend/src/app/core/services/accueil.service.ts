@@ -13,7 +13,7 @@ export interface InscriptionPayload {
   nom: string;
   prenom: string;
   date_naissance: string | null;
-  sexe: 'M' | 'F' | 'autre';
+  sexe: 'M' | 'F';
   telephone: string | null;
   email: string | null;
   contact_urgence: string | null;
@@ -30,6 +30,7 @@ export interface InscriptionPayload {
   medecin_id: string;
   derniere_date_regles: string | null;
   est_assure: boolean;
+  assurance_id?: string | null;
   compagnie_assurance: string | null;
   date_validite_assurance: string | null;
   numero_assure: string | null;
@@ -53,6 +54,13 @@ export interface InscriptionResponse {
     total_fcfa: number;
     statut: string;
   };
+  facture?: {
+    id: string;
+    numero_facture: string;
+    total_fcfa: number;
+    medecin_nom: string | null;
+    batiment: string | null;
+  } | null;
   message_transfert: string;
 }
 

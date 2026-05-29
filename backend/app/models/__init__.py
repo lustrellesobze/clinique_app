@@ -4,6 +4,8 @@ from app.models.hospitalization import Hospitalization
 from app.models.insurance import Insurance
 from app.models.invoice import Facture, FactureStatut, LigneFacture
 from app.models.notification import Notification
+from app.models.audit import AuditLog
+from app.models.loyalty import LoyaltyPoints
 from app.models.passage_accueil import PassageAccueil, StatutPassage, TypeConsultationPassage
 from app.models.payment import ModePaiement, Paiement, StatutPaiement
 from app.models.patient import Patient, Sexe
@@ -29,6 +31,8 @@ __all__ = [
     "Hospitalization",
     "Insurance",
     "Notification",
+    "AuditLog",
+    "LoyaltyPoints",
     "Prescription",
     "PrescriptionItem",
 ]

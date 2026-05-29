@@ -5,6 +5,14 @@
       <span class="brand-name">Clinique Espoir</span>
     </div>
     <div class="topbar-right">
+      <button
+        *ngIf="isAdmin() && onglet === 'compagnies'"
+        type="button"
+        class="btn-new-assurance"
+        (click)="openNewCompany()"
+      >
+        + Nouvelle Assurance
+      </button>
       <div class="user-badge" *ngIf="auth.getCurrentUser() as u">
         <span class="role-label">Gestion Assurances</span>
         <span class="user-name">· {{ u.prenom }} {{ u.nom }}</span>
@@ -17,190 +25,358 @@
   </header>
 
   <main class="main-content">
-    <h1>Gestion des Créances Assurances</h1>
+    <h1 class="page-title">
+      <span class="title-icon" aria-hidden="true">🏢</span>
+      Gestion des Assurances
+    </h1>
 
-  <!-- Messages -->
-  <div *ngIf="error" class="alert alert-danger">
-    {{ error }}
-  </div>
-
-  <div *ngIf="successMessage" class="alert alert-success">
-    {{ successMessage }}
-  </div>
-
-  <!-- Filtres -->
-  <div class="card filters-card">
-    <h2>Filtres</h2>
-    
-    <div class="filters-grid">
-      <div class="form-group">
-        <label>Compagnie d'assurance</label>
-        <select [(ngModel)]="filterCompagnie" (change)="onFilterChange()" class="form-control">
-          <option value="">Toutes les compagnies</option>
-          <option *ngFor="let company of companies" [value]="company.id">
-            {{ company.nom_compagnie }}
-          </option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label>Date début</label>
-        <input type="date" [(ngModel)]="filterDateDebut" (change)="onFilterChange()" class="form-control">
-      </div>
-
-      <div class="form-group">
-        <label>Date fin</label>
-        <input type="date" [(ngModel)]="filterDateFin" (change)="onFilterChange()" class="form-control">
-      </div>
-
-      <div class="form-group">
-        <label>Statut</label>
-        <select [(ngModel)]="filterStatut" (change)="onStatutFilterChange()" class="form-control">
-          <option value="">Tous les statuts</option>
-          <option value="en_attente">En attente</option>
-          <option value="partielle">Partielle</option>
-          <option value="payee">Payée</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="filter-actions">
-      <button (click)="loadClaims()" class="btn btn-secondary">
-        Actualiser
+    <div class="tabs">
+      <button
+        type="button"
+        class="tab"
+        [class.active]="onglet === 'compagnies'"
+        (click)="setOnglet('compagnies')"
+      >
+        Compagnies
+      </button>
+      <button
+        type="button"
+        class="tab"
+        [class.active]="onglet === 'creances'"
+        (click)="setOnglet('creances')"
+      >
+        Créances
       </button>
     </div>
-  </div>
 
-  <!-- Actions principales -->
-  <div class="actions-bar" *ngIf="!showValidationForm">
-    <div class="selection-info">
-      <span *ngIf="selectedClaims.size > 0">
-        {{ selectedClaims.size }} créance(s) sélectionnée(s) - 
-        Total: {{ totalSelected | number:'1.0-0' }} FCFA
-      </span>
-    </div>
-    <div class="actions-buttons">
-      <button 
-        (click)="showValidation()" 
-        class="btn btn-primary"
-        [disabled]="selectedClaims.size === 0">
-        Valider le paiement
-      </button>
-      <button (click)="exportToPDF()" class="btn btn-secondary">
-        Export PDF
-      </button>
-      <button (click)="exportToExcel()" class="btn btn-secondary">
-        Export Excel
-      </button>
-    </div>
-  </div>
+    <div *ngIf="error" class="alert alert-danger">{{ error }}</div>
+    <div *ngIf="successMessage" class="alert alert-success">{{ successMessage }}</div>
 
-  <!-- Liste des créances -->
-  <div class="card" *ngIf="!showValidationForm">
-    <h2>Créances en attente ({{ filteredClaims.length }})</h2>
+    <!-- Onglet Compagnies -->
+    <section *ngIf="onglet === 'compagnies'" class="compagnies-section">
+      <div *ngIf="showCompanyForm && isAdmin()" class="card form-card">
+        <h2>{{ editingCompanyId ? 'Modifier la compagnie' : 'Nouvelle assurance' }}</h2>
+        <div class="form-grid">
+          <label class="span-2">
+            <span>Nom de la compagnie</span>
+            <input type="text" [(ngModel)]="companyForm.nom_compagnie" />
+          </label>
+          <label>
+            <span>Plafond annuel (FCFA)</span>
+            <input
+              type="number"
+              min="0"
+              [(ngModel)]="companyForm.plafond_annuel_fcfa"
+            />
+          </label>
+          <label>
+            <span>Franchise (FCFA)</span>
+            <input type="number" min="0" [(ngModel)]="companyForm.franchise_fcfa" />
+          </label>
+          <label class="span-2">
+            <span>Libellé franchise</span>
+            <input type="text" [(ngModel)]="companyForm.franchise_libelle" />
+          </label>
+          <label class="span-2">
+            <span>Exclusions (séparées par des virgules)</span>
+            <input type="text" [(ngModel)]="exclusionsText" />
+          </label>
+        </div>
+        <h3>Taux de couverture par catégorie (%)</h3>
+        <div class="taux-form-grid">
+          <label
+            ><span>Consultation</span
+            ><input
+              type="number"
+              min="0"
+              max="100"
+              [(ngModel)]="companyForm.taux_par_categorie.consultation"
+              name="taux_consultation"
+          /></label>
+          <label
+            ><span>Imagerie</span
+            ><input
+              type="number"
+              min="0"
+              max="100"
+              [(ngModel)]="companyForm.taux_par_categorie.imagerie"
+              name="taux_imagerie"
+          /></label>
+          <label
+            ><span>Chirurgie</span
+            ><input
+              type="number"
+              min="0"
+              max="100"
+              [(ngModel)]="companyForm.taux_par_categorie.chirurgie"
+              name="taux_chirurgie"
+          /></label>
+          <label
+            ><span>Esthétique</span
+            ><input
+              type="number"
+              min="0"
+              max="100"
+              [(ngModel)]="companyForm.taux_par_categorie.esthetique"
+              name="taux_esthetique"
+          /></label>
+          <label
+            ><span>Hospitalisation</span
+            ><input
+              type="number"
+              min="0"
+              max="100"
+              [(ngModel)]="companyForm.taux_par_categorie.hospitalisation"
+              name="taux_hospitalisation"
+          /></label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="cancelCompanyForm()">
+            Annuler
+          </button>
+          <button type="button" class="btn btn-primary" (click)="saveCompany()" [disabled]="loading">
+            Enregistrer
+          </button>
+        </div>
+      </div>
 
-    <div *ngIf="loading" class="loading">
-      Chargement des créances...
-    </div>
-
-    <div *ngIf="!loading && filteredClaims.length === 0" class="no-data">
-      Aucune créance trouvée
-    </div>
-
-    <table *ngIf="!loading && filteredClaims.length > 0" class="table">
-      <thead>
-        <tr>
-          <th>
-            <input 
-              type="checkbox" 
-              [checked]="selectedClaims.size === filteredClaims.length && filteredClaims.length > 0"
-              (change)="selectAll()">
-          </th>
-          <th>N° Facture</th>
-          <th>Patient</th>
-          <th>Compagnie</th>
-          <th>Montant total</th>
-          <th>Part assurance</th>
-          <th>Date émission</th>
-          <th>Statut</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let claim of filteredClaims">
-          <td>
-            <input 
-              type="checkbox" 
-              [checked]="selectedClaims.has(claim.facture_id)"
-              (change)="toggleClaimSelection(claim.facture_id)">
-          </td>
-          <td><strong>{{ claim.numero_facture }}</strong></td>
-          <td>{{ claim.patient_nom }} {{ claim.patient_prenom }}</td>
-          <td>{{ claim.compagnie_assurance }}</td>
-          <td>{{ claim.montant_total | number:'1.0-0' }} FCFA</td>
-          <td><strong>{{ claim.part_assurance | number:'1.0-0' }} FCFA</strong></td>
-          <td>{{ claim.date_emission | date:'short' }}</td>
-          <td>
-            <span class="badge badge-{{ claim.statut }}">
-              {{ claim.statut === 'en_attente' ? 'En attente' : 
-                 claim.statut === 'partielle' ? 'Partielle' : 'Payée' }}
+      <div class="companies-list">
+        <article *ngFor="let c of catalog" class="company-card card">
+          <header class="company-header">
+            <h2>{{ c.nom_compagnie }}</h2>
+            <span class="badge" [class.badge-active]="c.est_active" [class.badge-inactive]="!c.est_active">
+              <span *ngIf="c.est_active">✓ Active</span>
+              <span *ngIf="!c.est_active">✕ Inactive</span>
             </span>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+          </header>
 
-  <!-- Formulaire de validation -->
-  <div class="card" *ngIf="showValidationForm">
-    <h2>Validation de paiement</h2>
+          <div class="coverage-box" *ngIf="c.est_active">
+            <p class="coverage-title">Taux de couverture par catégorie :</p>
+            <div class="taux-grid">
+              <div *ngFor="let t of tauxEntries(c.taux_par_categorie)" class="taux-item">
+                <span class="taux-label">{{ t.label }}</span>
+                <span class="taux-value" [ngClass]="tauxClass(t.value)">{{ t.value }}%</span>
+              </div>
+            </div>
+          </div>
 
-    <div class="validation-summary">
-      <div class="summary-row">
-        <span>Nombre de factures:</span>
-        <strong>{{ selectedClaims.size }}</strong>
-      </div>
-      <div class="summary-row">
-        <span>Montant total:</span>
-        <strong>{{ totalSelected | number:'1.0-0' }} FCFA</strong>
-      </div>
-    </div>
+          <dl class="company-meta" *ngIf="c.est_active">
+            <div>
+              <dt>Plafond annuel</dt>
+              <dd>{{ formatFcfa(c.plafond_annuel_fcfa) }}</dd>
+            </div>
+            <div>
+              <dt>Franchise</dt>
+              <dd>{{ c.franchise_libelle || 'Aucune' }}</dd>
+            </div>
+            <div *ngIf="c.exclusions_list?.length" class="span-2">
+              <dt>Exclusions</dt>
+              <dd>{{ c.exclusions_list.join(', ') }}</dd>
+            </div>
+          </dl>
 
-    <form (ngSubmit)="validatePayment()">
-      <div class="form-group">
-        <label>
-          Référence de paiement <span class="req">*</span>
-          <input 
-            type="text" 
-            [(ngModel)]="validationForm.reference_paiement" 
-            name="reference"
-            class="form-control" 
-            placeholder="Ex: VIREMENT-2026-001"
-            required>
-        </label>
+          <div class="company-actions">
+            <button
+              *ngIf="isAdmin()"
+              type="button"
+              class="btn btn-outline"
+              (click)="openEditCompany(c)"
+            >
+              Modifier
+            </button>
+            <button
+              *ngIf="isAdmin() && c.est_active"
+              type="button"
+              class="btn btn-outline"
+              (click)="toggleCompany(c)"
+            >
+              Désactiver
+            </button>
+            <button
+              *ngIf="isAdmin() && !c.est_active"
+              type="button"
+              class="btn btn-primary"
+              (click)="toggleCompany(c)"
+            >
+              Activer
+            </button>
+          </div>
+        </article>
+
+        <p *ngIf="!catalog.length && !loading" class="empty-hint">
+          Aucune compagnie. Exécutez le script seed ou ajoutez une assurance.
+        </p>
+      </div>
+    </section>
+
+    <!-- Onglet Créances -->
+    <section *ngIf="onglet === 'creances'" class="creances-section">
+      <h2 class="sub-title">Créances en cours (Comptable)</h2>
+
+      <div class="card filters-card">
+        <h3>Filtres</h3>
+        <div class="filters-grid">
+          <div class="form-group">
+            <label>Compagnie d'assurance</label>
+            <select [(ngModel)]="filterCompagnie" (change)="onFilterChange()" class="form-control">
+              <option value="">Toutes les compagnies</option>
+              <option *ngFor="let company of companies" [value]="company.id">
+                {{ company.nom_compagnie }}
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Date début</label>
+            <input
+              type="date"
+              [(ngModel)]="filterDateDebut"
+              (change)="onFilterChange()"
+              class="form-control"
+            />
+          </div>
+          <div class="form-group">
+            <label>Date fin</label>
+            <input
+              type="date"
+              [(ngModel)]="filterDateFin"
+              (change)="onFilterChange()"
+              class="form-control"
+            />
+          </div>
+          <div class="form-group">
+            <label>Statut</label>
+            <select [(ngModel)]="filterStatut" (change)="onStatutFilterChange()" class="form-control">
+              <option value="">Tous les statuts</option>
+              <option value="en_attente">En attente</option>
+              <option value="remboursee">Remboursée</option>
+              <option value="refusee">Refusée</option>
+            </select>
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button (click)="loadClaims()" class="btn btn-secondary">Actualiser</button>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>
-          Montant payé (FCFA) <span class="req">*</span>
-          <input 
-            type="number" 
-            [(ngModel)]="validationForm.montant_paye" 
-            name="montant"
-            class="form-control" 
-            required
-            readonly>
-        </label>
+      <div class="actions-bar" *ngIf="!showValidationForm">
+        <div class="selection-info">
+          <span *ngIf="selectedClaims.size > 0">
+            {{ selectedClaims.size }} créance(s) sélectionnée(s) -
+            Total: {{ totalSelected | number : '1.0-0' }} FCFA
+          </span>
+        </div>
+        <div class="action-buttons">
+          <button
+            (click)="showValidation()"
+            class="btn btn-primary"
+            [disabled]="selectedClaims.size === 0"
+          >
+            Valider le paiement
+          </button>
+          <button (click)="exportToPDF()" class="btn btn-secondary">Export PDF</button>
+          <button (click)="exportToExcel()" class="btn btn-secondary">Export Excel</button>
+        </div>
       </div>
 
-      <div class="form-actions">
-        <button type="button" (click)="cancelValidation()" class="btn btn-secondary" [disabled]="loading">
-          Annuler
-        </button>
-        <button type="submit" class="btn btn-primary" [disabled]="loading">
-          {{ loading ? 'Validation en cours...' : 'Valider le paiement' }}
-        </button>
+      <div *ngIf="showValidationForm" class="card validation-card">
+        <h3>Validation du paiement</h3>
+        <div class="form-group">
+          <label>Référence de paiement</label>
+          <input
+            type="text"
+            [(ngModel)]="validationForm.reference_paiement"
+            class="form-control"
+            placeholder="N° virement, chèque..."
+          />
+        </div>
+        <div class="form-group">
+          <label>Montant payé (FCFA)</label>
+          <input
+            type="number"
+            [(ngModel)]="validationForm.montant_paye"
+            class="form-control"
+            readonly
+          />
+        </div>
+        <div class="form-actions">
+          <button (click)="cancelValidation()" class="btn btn-secondary">Annuler</button>
+          <button (click)="validatePayment()" class="btn btn-primary" [disabled]="loading">
+            Confirmer
+          </button>
+        </div>
       </div>
-    </form>
-  </div>
+
+      <div class="card claims-card creances-comptable">
+        <div *ngIf="loading" class="loading">Chargement...</div>
+        <table *ngIf="!loading && filteredClaims.length" class="creances-table">
+          <thead>
+            <tr>
+              <th>PATIENT</th>
+              <th>ASSURANCE</th>
+              <th>MONTANT</th>
+              <th>DATE</th>
+              <th>STATUT</th>
+              <th>ACTION</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let claim of filteredClaims">
+              <td class="col-patient">
+                <strong
+                  >{{ claim.patient_nom | uppercase }}
+                  {{ claim.patient_prenom ? claim.patient_prenom.charAt(0) + '.' : '' }}</strong
+                >
+                <span class="patient-code" *ngIf="claim.patient_code">{{ claim.patient_code }}</span>
+              </td>
+              <td>{{ claim.compagnie_assurance }}</td>
+              <td class="col-montant">{{ claim.part_assurance | number : '1.0-0' }} F</td>
+              <td>{{ formatClaimDate(claim.date_emission) }}</td>
+              <td>
+                <span class="creance-statut" [ngClass]="'creance-' + claim.statut_creance">
+                  • {{ claim.statut_creance_label }}
+                </span>
+              </td>
+              <td class="col-action">
+                <button
+                  *ngIf="claim.statut_creance === 'en_attente'"
+                  type="button"
+                  class="btn-outline-sm"
+                  (click)="actionCreance('detail', claim)"
+                >
+                  Détail
+                </button>
+                <button
+                  *ngIf="claim.statut_creance === 'en_attente'"
+                  type="button"
+                  class="btn-outline-sm"
+                  (click)="actionCreance('relancer', claim)"
+                >
+                  Relancer
+                </button>
+                <button
+                  *ngIf="claim.statut_creance === 'remboursee'"
+                  type="button"
+                  class="btn-outline-sm"
+                  (click)="actionCreance('cloturer', claim)"
+                >
+                  Clôturer
+                </button>
+                <button
+                  *ngIf="claim.statut_creance === 'refusee'"
+                  type="button"
+                  class="btn-danger-sm"
+                  (click)="actionCreance('traiter', claim)"
+                >
+                  Traiter
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p *ngIf="!loading && !filteredClaims.length" class="empty-hint">
+          Aucune créance pour ces filtres.
+        </p>
+      </div>
+    </section>
   </main>
 </div>

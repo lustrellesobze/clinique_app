@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { AuthService } from '../../../core/auth/auth.service';
 
 @Component({
   selector: 'app-splash',
@@ -9,10 +10,26 @@ import { CommonModule } from '@angular/common';
   templateUrl: './splash.component.html',
   styleUrl: './splash.component.scss',
 })
-export class SplashComponent {
-  constructor(private router: Router) {}
+export class SplashComponent implements OnInit {
+  constructor(
+    private router: Router,
+    private auth: AuthService
+  ) {}
+
+  ngOnInit(): void {
+    if (this.auth.isLoggedIn() && this.auth.getCurrentUser()) {
+      this.auth.redirectByRole();
+    }
+  }
 
   goToLogin(): void {
-    this.router.navigate(['/login']);
+    if (this.auth.isLoggedIn() && this.auth.getCurrentUser()) {
+      this.auth.redirectByRole();
+      return;
+    }
+    if (this.auth.getToken()) {
+      this.auth.clearSession();
+    }
+    this.router.navigateByUrl('/login');
   }
 }

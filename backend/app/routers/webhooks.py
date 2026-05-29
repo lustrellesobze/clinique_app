@@ -1,21 +1,24 @@
 """
-Webhooks (Mobile Money) et WebSockets (notifications utilisateur, caisse).
+Webhooks (Mobile Money / Campay) et WebSockets (notifications utilisateur, caisse).
 """
 
 from datetime import datetime
-from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.core.realtime import caisse_realtime_manager
 from app.core.security import decode_access_token
 from app.core.websocket_manager import manager
 from app.database import get_db
-from app.models.invoice import Facture, FactureStatut
-from app.models.payment import Paiement, StatutPaiement
+from app.services.campay_webhook import (
+    apply_campay_notification_to_payment,
+    finalize_confirmed_mobile_payment_effects,
+    find_payment_for_campay_refs,
+    parse_campay_transaction_notification,
+    parse_webhook_raw_body,
+    verify_campay_webhook_request,
+)
 
 # Notifications temps réel (JWT) — chemin final: /api/ws/notifications
 ws_router = APIRouter(prefix="/ws", tags=["websocket"])
@@ -61,57 +64,43 @@ async def websocket_notifications(
         manager.disconnect(websocket, user_id)
 
 
-class MobileWebhookIn(BaseModel):
-    reference_transaction: str = Field(min_length=3, max_length=120)
-    status: str = Field(description="SUCCESS, FAILED, PENDING")
-    provider: str | None = None
-    paid_at: datetime | None = None
-    amount: Decimal | None = None
-    operator_message: str | None = None
-
-
 @router.post("/mobile-money")
-async def mobile_money_webhook(
-    body: MobileWebhookIn,
-    db: Session = Depends(get_db),
-    x_webhook_token: str | None = Header(default=None),
-):
-    # Pour la soutenance: token simple. À remplacer par signature HMAC opérateur.
-    if x_webhook_token != "dev-mobile-webhook-token":
-        raise HTTPException(status_code=401, detail="Webhook token invalide")
+async def mobile_money_webhook(request: Request, db: Session = Depends(get_db)):
+    """
+    Callback Campay : corps JSON identique à la réponse transaction
+    (reference, external_reference, status: PENDING|SUCCESSFUL|FAILED, amount, currency,
+    operator, code, operator_reference, description).
 
-    payment = db.scalars(
-        select(Paiement).where(Paiement.reference_transaction == body.reference_transaction)
-    ).first()
-    if not payment:
+    Auth :
+    - JWT HS256 signé avec ``CAMPAY_WEBHOOK_SECRET`` (Authorization: Bearer … ou en-têtes du type
+      X-Campay-Signature), comme ``ValidateCallback`` dans le SDK Go officiel ;
+    - ou en-tête ``x-webhook-token`` égal à ``CAMPAY_WEBHOOK_SECRET`` (ou jeton dev si secret vide).
+    """
+    raw_body = await request.body()
+    payload_dict, body_was_verified_jwt = parse_webhook_raw_body(raw_body)
+
+    if not payload_dict:
+        raise HTTPException(status_code=400, detail="Corps webhook vide ou invalide")
+
+    verify_campay_webhook_request(
+        request,
+        payload_dict=payload_dict,
+        raw_body=raw_body,
+        body_was_verified_jwt=body_was_verified_jwt,
+    )
+
+    notify = parse_campay_transaction_notification(payload_dict)
+    if not notify.lookup_refs:
+        raise HTTPException(status_code=400, detail="reference / external_reference manquant")
+
+    payment, facture = find_payment_for_campay_refs(db, notify.lookup_refs)
+    if not payment or not facture:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
 
-    facture = db.scalars(select(Facture).where(Facture.id == payment.facture_id)).first()
-    if not facture:
-        raise HTTPException(status_code=404, detail="Facture introuvable")
+    outcome = apply_campay_notification_to_payment(db, payment=payment, facture=facture, notify=notify)
 
-    status_up = body.status.upper()
-    total = Decimal(str(facture.montant_total or 0))
-    regle = Decimal(str(facture.montant_regle or 0))
-    amount = Decimal(str(body.amount if body.amount is not None else payment.montant))
-
-    if status_up == "SUCCESS" and payment.statut != StatutPaiement.confirme:
-        payment.statut = StatutPaiement.confirme
-        regle = regle + amount
-        facture.montant_regle = float(regle)
-        if regle >= total:
-            facture.statut = FactureStatut.payee
-        elif regle > 0:
-            facture.statut = FactureStatut.partielle
-        else:
-            facture.statut = FactureStatut.en_attente
-    elif status_up == "FAILED":
-        payment.statut = StatutPaiement.annule
-    else:
-        payment.statut = StatutPaiement.en_attente
-
-    if body.operator_message:
-        payment.commentaire = f"{payment.commentaire or ''}\nWebhook: {body.operator_message}".strip()
+    if outcome == "confirmed":
+        finalize_confirmed_mobile_payment_effects(db, payment, facture)
 
     db.commit()
     db.refresh(payment)
@@ -126,11 +115,12 @@ async def mobile_money_webhook(
             "invoice_id": facture.id,
             "invoice_status": facture.statut.value,
             "invoice_paid": float(facture.montant_regle or 0),
+            "campay_raw_status": notify.raw_status,
             "timestamp": datetime.utcnow().isoformat(),
         }
     )
 
-    return {"ok": True}
+    return {"ok": True, "outcome": outcome}
 
 
 @router.websocket("/ws/caisse")

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
@@ -15,6 +15,14 @@ class DoctorPatientOut(BaseModel):
     statut_passage: str
     type_consultation: str
     created_at: datetime | None = None
+
+
+class DoctorLookupOut(DoctorPatientOut):
+    date_naissance: date | None = None
+    sexe: str | None = None
+    age_ans: int | None = None
+    derniere_consultation: datetime | None = None
+    allergies_connues: str = "Aucune connue"
 
 
 class ConsultationUpdateIn(BaseModel):
@@ -98,5 +106,10 @@ class PatientRecordOut(BaseModel):
     prenom: str
     telephone: str | None = None
     assureur: str | None = None
+    date_naissance: date | None = None
+    sexe: str | None = None
+    age_ans: int | None = None
+    derniere_consultation: datetime | None = None
+    allergies_connues: str = "Aucune connue"
     passages: list[ConsultationOut] = Field(default_factory=list)
     prescriptions: list[PrescriptionOut] = Field(default_factory=list)

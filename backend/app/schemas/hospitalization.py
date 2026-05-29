@@ -60,6 +60,41 @@ class HospitalizationDischarge(BaseModel):
     reference_paiement: Optional[str] = Field(None, description="Référence de paiement")
 
 
+class HospitalizationStatsOut(BaseModel):
+    chambres_occupees: int
+    chambres_total: int
+    ca_hospitalisation_fcfa: float
+    duree_moyenne_jours: float
+    patients_hospitalises: int = 0
+    sejours_clotures: int = 0
+
+
+class HospitalizationAdminRow(BaseModel):
+    id: str
+    patient_id: str
+    patient_code: str
+    patient_name: str
+    room_numero: str
+    room_type: str
+    room_label: str
+    medecin_name: Optional[str] = None
+    date_admission: datetime
+    nombre_jours: int
+    frais_chambre_fcfa: float
+    total_facture_fcfa: float
+    acomptes_fcfa: float
+    solde_fcfa: float
+    motif_hospitalisation: Optional[str] = None
+    tarif_journalier: float
+    statut: str
+
+
+class HospitalizationDashboardOut(BaseModel):
+    stats: HospitalizationStatsOut
+    patients: list[HospitalizationAdminRow]
+    rooms_available: int
+
+
 class HospitalizationDischargeResponse(BaseModel):
     """Réponse après clôture"""
     hospitalization_id: str

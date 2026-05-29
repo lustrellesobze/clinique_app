@@ -17,6 +17,7 @@ import {
   finalize,
 } from 'rxjs';
 import {
+  GoogleAuthConfig,
   LoginRequest,
   LoginResponse,
   UserInfo,
@@ -49,6 +50,31 @@ export class AuthService {
     private router: Router
   ) {
     this.plainHttp = new HttpClient(httpBackend);
+  }
+
+  getGoogleAuthConfig(): Observable<GoogleAuthConfig> {
+    return this.http.get<GoogleAuthConfig>(`${this.API_URL}/auth/google/config`);
+  }
+
+  /** Connexion Google — réservée au rôle infirmière d'accueil. */
+  loginWithGoogle(credential: string): Observable<LoginResponse> {
+    return this.http
+      .post<LoginResponse>(`${this.API_URL}/auth/google`, { credential })
+      .pipe(
+        tap((response) => {
+          localStorage.setItem(this.TOKEN_KEY, response.access_token);
+          localStorage.setItem(this.REFRESH_KEY, response.refresh_token);
+          localStorage.setItem(this.USER_KEY, JSON.stringify(response.user));
+          this.currentUserSubject.next(response.user);
+        }),
+        catchError((err: unknown) => {
+          const message =
+            err instanceof HttpErrorResponse
+              ? this.mapLoginError(err)
+              : 'Erreur inattendue. Réessayez.';
+          return throwError(() => new Error(message));
+        })
+      );
   }
 
   // ─── LOGIN ────────────────────────────────────────────────────────────
@@ -115,12 +141,17 @@ export class AuthService {
     return `Erreur ${error.status}${error.statusText ? ' — ' + error.statusText : ''}. Réessayez ou ouvrez /docs sur l’API.`;
   }
 
-  // ─── LOGOUT ───────────────────────────────────────────────────────────
-  logout(): void {
+  /** Supprime la session locale (token + utilisateur). */
+  clearSession(): void {
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.REFRESH_KEY);
     localStorage.removeItem(this.USER_KEY);
     this.currentUserSubject.next(null);
+  }
+
+  // ─── LOGOUT ───────────────────────────────────────────────────────────
+  logout(): void {
+    this.clearSession();
     this.router.navigate(['/']);
   }
 
@@ -190,11 +221,12 @@ export class AuthService {
   redirectByRole(): void {
     const user = this.getCurrentUser();
     if (!user) {
-      this.router.navigate(['/']);
+      this.clearSession();
+      this.router.navigate(['/login']);
       return;
     }
     const route = ROLE_ROUTES[user.role] ?? '/dashboard';
-    this.router.navigate([route]);
+    this.router.navigateByUrl(route);
   }
 
   /** Corps d’erreur FastAPI `{ detail: string | … }`. */

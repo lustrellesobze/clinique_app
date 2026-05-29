@@ -8,6 +8,7 @@ import { AuthService } from '../../core/auth/auth.service';
 import {
   CaisseService,
   FactureOut,
+  MODE_PAIEMENT_LABELS,
   LigneFactureIn,
   MobilePaymentInitOut,
   PaiementOut,
@@ -23,6 +24,7 @@ import {
   styleUrls: ['./caisse.component.scss'],
 })
 export class CaisseComponent implements OnInit, OnDestroy {
+  readonly modePaiementLabels = MODE_PAIEMENT_LABELS;
   readonly auth = inject(AuthService);
   private readonly fb = inject(FormBuilder);
   private readonly caisse = inject(CaisseService);
@@ -41,7 +43,10 @@ export class CaisseComponent implements OnInit, OnDestroy {
   paiementsFacture: PaiementOut[] = [];
   mobileInit: MobilePaymentInitOut | null = null;
   mobileStatus: PaymentStatusOut | null = null;
+  showFactureModal = false;
+  qrPatientObjectUrl: string | null = null;
   private ws: WebSocket | null = null;
+  private readonly codePatientPattern = /^P-\d{4}-\d{5}$/i;
 
   searchForm = this.fb.group({
     q: ['', [Validators.required, Validators.minLength(2)]],
@@ -73,7 +78,14 @@ export class CaisseComponent implements OnInit, OnDestroy {
     montant_mobile: [0, [Validators.min(0)]],
     mode_mobile: ['orange_money' as 'orange_money' | 'mtn_momo'],
     reference_mobile: [''],
+    telephone_paiement: ['', [Validators.minLength(8)]],
   });
+
+  /** Modes nécessitant un push Campay sur le téléphone du client. */
+  get isMobileMoneyMode(): boolean {
+    const mode = this.paymentForm.get('mode_paiement')?.value;
+    return mode === 'orange_money' || mode === 'mtn_momo' || mode === 'mixte';
+  }
 
   get totalSaisie(): number {
     const qte = Number(this.invoiceForm.get('quantite')?.value ?? 0);
@@ -88,6 +100,70 @@ export class CaisseComponent implements OnInit, OnDestroy {
     return Math.max(0, recu - montant);
   }
 
+  get facturePayee(): boolean {
+    return (
+      !!this.factureSelected &&
+      Number(this.factureSelected.restant_a_payer) <= 0
+    );
+  }
+
+  get paymentRecapLines(): string[] {
+    const confirmed = this.paiementsFacture.filter(
+      (p) => p.statut === 'confirme'
+    );
+    let especes = 0;
+    let orange = 0;
+    let mtn = 0;
+    for (const p of confirmed) {
+      const m = Number(p.montant) || 0;
+      if (p.mode_paiement === 'especes') {
+        especes += m;
+      } else if (p.mode_paiement === 'orange_money') {
+        orange += m;
+      } else if (p.mode_paiement === 'mtn_momo') {
+        mtn += m;
+      }
+    }
+    const lines: string[] = [];
+    if (especes > 0) {
+      lines.push(`Espèces (Cash) : ${especes.toLocaleString('fr-FR')} FCFA`);
+    }
+    if (orange > 0) {
+      lines.push(`Orange Money : ${orange.toLocaleString('fr-FR')} FCFA`);
+    }
+    if (mtn > 0) {
+      lines.push(`MTN MoMo : ${mtn.toLocaleString('fr-FR')} FCFA`);
+    }
+    return lines;
+  }
+
+  get isPaiementMixte(): boolean {
+    return this.paymentRecapLines.length > 1;
+  }
+
+  get caissierNom(): string {
+    const u = this.auth.getCurrentUser();
+    return u ? `${u.prenom} ${u.nom}`.trim() : '—';
+  }
+
+  get paymentModeDisplay(): string {
+    if (this.isPaiementMixte) {
+      return 'Mixte — ' + this.paymentRecapLines.join(' · ');
+    }
+    const last = this.paiementsFacture.filter((p) => p.statut === 'confirme').pop();
+    if (last) {
+      return this.labelMode(last.mode_paiement);
+    }
+    return '—';
+  }
+
+  get paymentReference(): string {
+    const refs = this.paiementsFacture
+      .filter((p) => p.statut === 'confirme' && p.reference_transaction)
+      .map((p) => p.reference_transaction);
+    return refs.length ? refs.join(' / ') : '—';
+  }
+
   ngOnInit(): void {
     this.connectRealtime();
   }
@@ -97,6 +173,32 @@ export class CaisseComponent implements OnInit, OnDestroy {
       this.ws.close();
       this.ws = null;
     }
+    if (this.qrPatientObjectUrl) {
+      URL.revokeObjectURL(this.qrPatientObjectUrl);
+    }
+  }
+
+  /** ID patient (P-2026-XXXXX) : chargement direct + facture préremplie. */
+  chargerParId(): void {
+    const q = (this.searchForm.get('q')?.value ?? '').trim();
+    if (q.length < 3) {
+      this.searchingError = 'Saisissez le code patient (ex. P-2026-00123).';
+      return;
+    }
+    this.resetAlerts();
+    this.loadingSearch = true;
+    this.caisse.chargerPatientParCode(q).subscribe({
+      next: (p) => {
+        this.loadingSearch = false;
+        this.patients = [p];
+        this.searchingError = '';
+        this.choisirPatient(p);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.loadingSearch = false;
+        this.searchingError = this.errorFromHttp(err);
+      },
+    });
   }
 
   onSearchPatient(): void {
@@ -104,9 +206,13 @@ export class CaisseComponent implements OnInit, OnDestroy {
       this.searchForm.markAllAsTouched();
       return;
     }
+    const q = (this.searchForm.get('q')?.value ?? '').trim();
+    if (this.codePatientPattern.test(q)) {
+      this.chargerParId();
+      return;
+    }
     this.resetAlerts();
     this.loadingSearch = true;
-    const q = (this.searchForm.get('q')?.value ?? '').trim();
     this.caisse.rechercherPatients(q).subscribe({
       next: (rows) => {
         this.loadingSearch = false;
@@ -115,6 +221,9 @@ export class CaisseComponent implements OnInit, OnDestroy {
           this.searchingError = 'Aucun patient trouvé pour ce critère.';
         } else {
           this.searchingError = '';
+          if (rows.length === 1) {
+            this.choisirPatient(rows[0]);
+          }
         }
       },
       error: (err: HttpErrorResponse) => {
@@ -131,15 +240,50 @@ export class CaisseComponent implements OnInit, OnDestroy {
     this.mobileInit = null;
     this.mobileStatus = null;
     this.paymentForm.patchValue({ montant: 0, mode_paiement: 'especes' });
+    if (p.montant_consultation_fcfa != null) {
+      const label = p.type_consultation_label || 'Consultation';
+      this.invoiceForm.patchValue({
+        designation: `Consultation — ${label}`,
+        quantite: 1,
+        prix_unitaire: Number(p.montant_consultation_fcfa),
+        remise_montant: Number(p.remise_passage_fcfa ?? 0),
+      });
+    }
+    this.paymentForm.patchValue({
+      telephone_paiement: p.telephone?.trim() || '',
+    });
     this.chargerFactures(p.id);
   }
 
-  private chargerFactures(patientId: string): void {
-    this.caisse.listerFacturesPatient(patientId).subscribe({
-      next: (rows) => {
-        this.factures = rows;
+  private telephonePourMobile(): string | null {
+    const t = String(this.paymentForm.get('telephone_paiement')?.value ?? '').trim();
+    return t || this.patientSelected?.telephone?.trim() || null;
+  }
+
+  /** Une seule facture consultation (en attente prioritaire). */
+  get factureEnAttente(): boolean {
+    const f = this.factureSelected;
+    if (!f) return false;
+    return (
+      Number(f.restant_a_payer) > 0 &&
+      ['en_attente', 'partielle', 'brouillon'].includes(f.statut)
+    );
+  }
+
+  private chargerFactures(patientId: string, keepFactureId?: string): void {
+    this.caisse.getFactureConsultationActive(patientId).subscribe({
+      next: (inv) => {
+        this.factures = [inv];
+        const id = keepFactureId && inv.id === keepFactureId ? keepFactureId : inv.id;
+        this.selectionnerFacture(id);
       },
       error: (err: HttpErrorResponse) => {
+        if (err.status === 404) {
+          this.factures = [];
+          this.factureSelected = null;
+          this.paiementsFacture = [];
+          return;
+        }
         this.errorMsg = this.errorFromHttp(err);
       },
     });
@@ -179,9 +323,26 @@ export class CaisseComponent implements OnInit, OnDestroy {
       });
   }
 
+  labelMode(mode: string): string {
+    return this.modePaiementLabels[mode] ?? mode;
+  }
+
   selectionnerFacture(factureId: string): void {
     const inv = this.factures.find((x) => x.id === factureId) ?? null;
     this.factureSelected = inv;
+    if (inv?.paiements?.length) {
+      this.paiementsFacture = inv.paiements;
+    }
+    if (inv && this.patientSelected) {
+      this.patientSelected = {
+        ...this.patientSelected,
+        medecin_nom: inv.medecin_nom ?? this.patientSelected.medecin_nom,
+        batiment: inv.batiment ?? this.patientSelected.batiment,
+        type_consultation_label:
+          inv.type_consultation_label ??
+          this.patientSelected.type_consultation_label,
+      };
+    }
     if (inv) {
       const remaining = Number(inv.restant_a_payer) || 0;
       this.paymentForm.patchValue({
@@ -193,7 +354,9 @@ export class CaisseComponent implements OnInit, OnDestroy {
         reference_transaction: '',
         reference_mobile: '',
       });
-      this.chargerPaiements(inv.id);
+      if (!inv.paiements?.length) {
+        this.chargerPaiements(inv.id);
+      }
     }
   }
 
@@ -231,18 +394,31 @@ export class CaisseComponent implements OnInit, OnDestroy {
     }
 
     if (mode === 'mtn_momo' || mode === 'orange_money') {
+      const tel = this.telephonePourMobile();
+      if (!tel) {
+        this.paying = false;
+        this.errorMsg =
+          'Saisissez le numéro Mobile Money du client (ex. 670000001 ou +237 6XX XX XX XX).';
+        return;
+      }
       const ref = String(
         this.paymentForm.get('reference_transaction')?.value ?? ''
       ).trim();
+      const label = mode === 'orange_money' ? 'Orange Money' : 'MTN MoMo';
       this.caisse
-        .initierPaiementMobile(this.factureSelected.id, mode, montant, ref || null)
+        .initierPaiementMobile(
+          this.factureSelected.id,
+          mode,
+          montant,
+          ref || null,
+          tel
+        )
         .subscribe({
           next: (init) => {
             this.paying = false;
             this.mobileInit = init;
             this.mobileStatus = null;
-            this.successMsg =
-              'Paiement mobile initié. Scanner le QR puis confirmer.';
+            this.successMsg = `Paiement ${label} initié. Notification envoyée ; QR affiché en secours si besoin.`;
             this.chargerPaiements(this.factureSelected!.id);
           },
           error: (err: HttpErrorResponse) => this.onPaymentError(err),
@@ -271,37 +447,55 @@ export class CaisseComponent implements OnInit, OnDestroy {
         this.errorMsg = `Le total mixte (${sum}) dépasse le reste à payer (${restant}).`;
         return;
       }
-      if (mobile > 0 && !mobileRef) {
+      const factureId = this.factureSelected.id;
+      const telMixte = this.telephonePourMobile();
+      if (mobile > 0 && !telMixte) {
         this.paying = false;
-        this.errorMsg = 'Référence mobile obligatoire pour la partie mobile.';
+        this.errorMsg = 'Numéro Mobile Money requis pour la partie mobile.';
         return;
       }
-      if (cash > 0) {
+      const lancerMobileQr = () => {
         this.caisse
-          .encaisser(this.factureSelected.id, cash, 'especes', null)
+          .initierPaiementMobile(
+            factureId,
+            mobileMode,
+            mobile,
+            mobileRef || null,
+            telMixte
+          )
           .subscribe({
-            next: () => {
-              if (mobile > 0) {
-                this.caisse
-                  .encaisser(this.factureSelected!.id, mobile, mobileMode, mobileRef)
-                  .subscribe({
-                    next: () => this.afterPaymentSuccess('Paiement mixte enregistré.'),
-                    error: (err: HttpErrorResponse) => this.onPaymentError(err),
-                  });
-                return;
-              }
-              this.afterPaymentSuccess('Paiement en espèces enregistré.');
+            next: (init) => {
+              this.paying = false;
+              this.mobileInit = init;
+              this.mobileStatus = null;
+              this.successMsg =
+                'Partie espèces enregistrée. Notification Mobile Money envoyée ; QR Campay affiché en secours.';
+              this.chargerFactures(this.patientSelected!.id);
+              this.chargerPaiements(factureId);
             },
             error: (err: HttpErrorResponse) => this.onPaymentError(err),
           });
-        return;
-      }
-      this.caisse
-        .encaisser(this.factureSelected.id, mobile, mobileMode, mobileRef)
-        .subscribe({
-          next: () => this.afterPaymentSuccess('Paiement mobile enregistré.'),
+      };
+      if (cash > 0) {
+        this.caisse.encaisser(factureId, cash, 'especes', null).subscribe({
+          next: () => {
+            if (mobile > 0) {
+              lancerMobileQr();
+              return;
+            }
+            this.afterPaymentSuccess(
+              'Paiement en espèces enregistré. Vous pouvez imprimer la facture.'
+            );
+          },
           error: (err: HttpErrorResponse) => this.onPaymentError(err),
         });
+        return;
+      }
+      if (mobile > 0) {
+        lancerMobileQr();
+        return;
+      }
+      this.paying = false;
       return;
     }
 
@@ -316,7 +510,12 @@ export class CaisseComponent implements OnInit, OnDestroy {
         : String(this.paymentForm.get('reference_transaction')?.value ?? '').trim();
 
     this.caisse.encaisser(this.factureSelected.id, montant, mode, ref).subscribe({
-      next: () => this.afterPaymentSuccess('Paiement enregistré avec succès.'),
+      next: () => {
+        this.afterPaymentSuccess(
+          'Paiement enregistré. Imprimez ou téléchargez la facture.'
+        );
+        this.ouvrirApercuFactureApresPaiement();
+      },
       error: (err: HttpErrorResponse) => this.onPaymentError(err),
     });
   }
@@ -344,7 +543,9 @@ export class CaisseComponent implements OnInit, OnDestroy {
       next: (s) => {
         this.paying = false;
         this.mobileStatus = s;
-        this.successMsg = 'Paiement mobile confirmé.';
+        this.successMsg =
+          'Paiement confirmé. Ouvrez la facture pour l’imprimer ou la remettre au patient.';
+        this.ouvrirApercuFactureApresPaiement();
         if (this.patientSelected) {
           this.chargerFactures(this.patientSelected.id);
         }
@@ -356,19 +557,116 @@ export class CaisseComponent implements OnInit, OnDestroy {
     });
   }
 
-  ouvrirPdfFacture(factureId: string): void {
-    window.open(this.caisse.getInvoicePdfUrl(factureId), '_blank');
+  ouvrirApercuFacture(): void {
+    if (!this.factureSelected) {
+      return;
+    }
+    this.showFactureModal = true;
+    this.loadQrPatientImage();
+  }
+
+  fermerApercuFacture(): void {
+    this.showFactureModal = false;
+  }
+
+  private loadQrPatientImage(): void {
+    const code =
+      this.factureSelected?.code_patient ?? this.patientSelected?.code_patient;
+    if (!code) {
+      return;
+    }
+    if (this.qrPatientObjectUrl) {
+      URL.revokeObjectURL(this.qrPatientObjectUrl);
+      this.qrPatientObjectUrl = null;
+    }
+    this.caisse.chargerQrPatient(code).subscribe({
+      next: (blob) => {
+        this.qrPatientObjectUrl = URL.createObjectURL(blob);
+      },
+      error: () => {
+        this.qrPatientObjectUrl = null;
+      },
+    });
+  }
+
+  imprimerApercuFacture(): void {
+    if (this.factureSelected) {
+      this.imprimerFacture(this.factureSelected.id);
+      return;
+    }
+    window.print();
+  }
+
+  ouvrirPdfFacture(factureId?: string): void {
+    this.telechargerFacture(factureId, true);
+  }
+
+  imprimerFacture(factureId?: string): void {
+    const id = factureId ?? this.factureSelected?.id;
+    if (!id) {
+      return;
+    }
+    this.caisse.telechargerFacturePdf(id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, '_blank');
+        if (w) {
+          w.addEventListener('load', () => {
+            w.print();
+          });
+        }
+      },
+      error: (err: HttpErrorResponse) => {
+        this.errorMsg = this.errorFromHttp(err);
+      },
+    });
+  }
+
+  telechargerFacture(factureId?: string, openInTab = false): void {
+    const id = factureId ?? this.factureSelected?.id;
+    const numero =
+      this.factures.find((f) => f.id === id)?.numero_facture ??
+      this.factureSelected?.numero_facture ??
+      'facture';
+    if (!id) {
+      return;
+    }
+    this.caisse.telechargerFacturePdf(id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        if (openInTab) {
+          window.open(url, '_blank');
+          return;
+        }
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${numero}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.errorMsg = this.errorFromHttp(err);
+      },
+    });
   }
 
   private afterPaymentSuccess(message: string): void {
     this.paying = false;
     this.successMsg = message;
+    const factureId = this.factureSelected?.id;
     if (this.patientSelected) {
-      this.chargerFactures(this.patientSelected.id);
+      this.chargerFactures(this.patientSelected.id, factureId);
+    } else if (factureId) {
+      this.chargerPaiements(factureId);
     }
-    if (this.factureSelected) {
-      this.chargerPaiements(this.factureSelected.id);
-    }
+  }
+
+  private ouvrirApercuFactureApresPaiement(): void {
+    setTimeout(() => {
+      if (this.facturePayee && this.factureSelected) {
+        this.ouvrirApercuFacture();
+      }
+    }, 400);
   }
 
   private onPaymentError(err: HttpErrorResponse): void {

@@ -14,6 +14,7 @@ import {
   InscriptionResponse,
   MedecinOption,
 } from '../../core/services/accueil.service';
+import { Insurance, InsuranceService } from '../../core/services/insurance.service';
 
 @Component({
   selector: 'app-accueil',
@@ -26,25 +27,20 @@ export class AccueilComponent implements OnInit {
   readonly auth = inject(AuthService);
   private readonly fb = inject(FormBuilder);
   private readonly accueil = inject(AccueilService);
+  private readonly insurance = inject(InsuranceService);
 
   medecins: MedecinOption[] = [];
   success: InscriptionResponse | null = null;
   errorMsg = '';
   submitting = false;
 
-  readonly assureurs = [
-    'CNPS',
-    'Activa',
-    'Allianz',
-    'Sanlam',
-    'Autre / mutuelle',
-  ];
+  assureursActifs: Insurance[] = [];
 
   form = this.fb.group({
     nom: ['', Validators.required],
     prenom: ['', Validators.required],
     date_naissance: ['', Validators.required],
-    sexe: ['M' as 'M' | 'F' | 'autre', Validators.required],
+    sexe: ['M' as 'M' | 'F', Validators.required],
     telephone: ['', Validators.required],
     email: [''],
     contact_urgence: [''],
@@ -60,7 +56,7 @@ export class AccueilComponent implements OnInit {
     ],
     medecin_id: ['', Validators.required],
     est_assure: ['non' as 'oui' | 'non'],
-    compagnie_assurance: [''],
+    assurance_id: [''],
     date_validite_assurance: [''],
     numero_assure: [''],
     montant_consultation_fcfa: [5000, [Validators.required, Validators.min(0)]],
@@ -74,6 +70,14 @@ export class AccueilComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.insurance.getCompanies().subscribe({
+      next: (list) => {
+        this.assureursActifs = list;
+      },
+      error: () => {
+        this.assureursActifs = [];
+      },
+    });
     this.accueil.listeMedecins().subscribe({
       next: (list) => {
         this.medecins = list;
@@ -103,7 +107,7 @@ export class AccueilComponent implements OnInit {
       type_consultation: 'generale',
       medecin_id: '',
       est_assure: 'non',
-      compagnie_assurance: '',
+      assurance_id: '',
       date_validite_assurance: '',
       numero_assure: '',
       montant_consultation_fcfa: 5000,
@@ -146,9 +150,8 @@ export class AccueilComponent implements OnInit {
           ? v.derniere_date_regles
           : null,
       est_assure: estAssure,
-      compagnie_assurance: estAssure
-        ? v.compagnie_assurance?.trim() || null
-        : null,
+      assurance_id: estAssure ? v.assurance_id?.trim() || null : null,
+      compagnie_assurance: null,
       date_validite_assurance: estAssure
         ? v.date_validite_assurance || null
         : null,
